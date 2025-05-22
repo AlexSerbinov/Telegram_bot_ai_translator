@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: ai-translator-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: secretpassword
+      MONGO_INITDB_DATABASE: ai-translator
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongo-init:/docker-entrypoint-initdb.d
+    networks:
+      - ai-translator-network
+
+  bot:
+    build: .
+    container_name: ai-translator-bot
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://admin:secretpassword@mongodb:27017/ai-translator?authSource=admin
+    env_file:
+      - .env
+    volumes:
+      - ./temp:/app/temp
+    networks:
+      - ai-translator-network
+    # Uncomment to run bot immediately
+    # command: npm start
+
+volumes:
+  mongodb_data:
+
+networks:
+  ai-translator-network:
+    driver: bridge 

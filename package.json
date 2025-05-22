@@ -1,0 +1,34 @@
+{
+  "name": "ai-translator-bot",
+  "version": "1.0.0",
+  "description": "AI-powered Telegram translator bot using OpenAI",
+  "main": "src/bot.js",
+  "scripts": {
+    "start": "node src/bot.js",
+    "dev": "nodemon src/bot.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "ai",
+    "translator",
+    "openai",
+    "speech-to-text",
+    "text-to-speech"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.2",
+    "dotenv": "^16.3.1",
+    "form-data": "^4.0.0",
+    "fs-extra": "^11.2.0",
+    "mongoose": "^8.15.0",
+    "openai": "^4.24.0",
+    "telegraf": "^4.15.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
