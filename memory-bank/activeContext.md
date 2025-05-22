@@ -19,7 +19,7 @@
 - Different processing flows for Premium vs Free users
 
 ✅ **Technical Improvements**
-- Updated GPT model to gpt-4o-nano for better performance
+- Updated GPT model to gpt-4o-mini-transcribe for better performance
 - Implemented pending audio system for Free users
 - Enhanced error handling and cleanup
 
@@ -62,7 +62,7 @@
 - Implements callback system for delayed processing
 
 ### 4. Technical Updates
-- Changed GPT model from gpt-4.1-nano to gpt-4o-nano
+- Changed GPT model from gpt-4.1-nano to gpt-4o-mini-transcribe
 - Enhanced callbackHandlers.js with new free user workflow
 - Improved error handling in audio processing
 

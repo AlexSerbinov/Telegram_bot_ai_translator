@@ -209,17 +209,25 @@ ${settingsText}
    */
   async handleSettingsDone(ctx) {
     try {
-      const settingsText = await languageService.formatCurrentSettings(ctx.from.id);
+      const userId = ctx.from.id;
+      const settingsText = await languageService.formatCurrentSettings(userId);
       
-      const message = `✅ **Налаштування збережено!**
+      // Get user info to determine subscription type
+      const user = await databaseService.getUserByTelegramId(userId);
+      
+      let message, keyboard;
+      
+      if (user && user.subscriptionType === 'premium') {
+        // Premium user - show automatic mode
+        message = `✅ **Налаштування збережено!**
 
 ${settingsText}
 
+👑 **Premium режим:** Система автоматично розпізнає мову та перекладе
+
 Тепер ви можете надсилати голосові повідомлення для автоматичного перекладу 🎤`;
 
-      await ctx.editMessageText(message, {
-        parse_mode: 'Markdown',
-        reply_markup: {
+        keyboard = {
           inline_keyboard: [
             [
               {
@@ -232,7 +240,49 @@ ${settingsText}
               }
             ]
           ]
-        }
+        };
+      } else {
+        // Free user - show language selection buttons
+        const primaryLang = config.languages[user.languages.primaryLanguage];
+        const secondaryLang = config.languages[user.languages.secondaryLanguage];
+        
+        message = `✅ **Налаштування збережено!**
+
+${settingsText}
+
+🆓 **Безкоштовний режим:** Спочатку оберіть мову диктування, потім записуйте голосове повідомлення
+
+Оберіть мову диктування:`;
+
+        keyboard = {
+          inline_keyboard: [
+            [
+                             {
+                 text: `🎤 Диктувати ${primaryLang.flag}`,
+                 callback_data: `set_voice_lang_${user.languages.primaryLanguage}`
+               },
+               {
+                 text: `🎤 Диктувати ${secondaryLang.flag}`,
+                 callback_data: `set_voice_lang_${user.languages.secondaryLanguage}`
+               }
+            ],
+            [
+              {
+                text: '📊 Мої ліміти',
+                callback_data: 'show_limits'
+              },
+              {
+                text: '📖 Довідка',
+                callback_data: 'show_help'
+              }
+            ]
+          ]
+        };
+      }
+
+      await ctx.editMessageText(message, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
       });
       
       await ctx.answerCbQuery('✅ Налаштування збережено!');
@@ -440,115 +490,100 @@ ${userStats.subscription.type === 'free' ? '\n💎 Преміум підписк
   }
 
   /**
-   * Handle free user translation after language selection
+   * Handle setting voice language for free users
    */
-  async handleFreeUserTranslation(ctx, callbackData) {
+  async handleSetVoiceLanguage(ctx, callbackData) {
     try {
-      const [, audioId, fromLang, toLang] = callbackData.split('_');
+      const languageCode = callbackData.replace('set_voice_lang_', '');
+      const userId = ctx.from.id;
       
-      // Get pending audio data
-      if (!global.pendingAudio || !global.pendingAudio[audioId]) {
-        await ctx.editMessageText('❌ Сесія завершена. Надішліть голосове повідомлення знову.');
-        await ctx.answerCbQuery('❌ Сесія завершена');
+      // Get user
+      const user = await databaseService.getUserByTelegramId(userId);
+      if (!user) {
+        await ctx.answerCbQuery('❌ Помилка: користувач не знайден');
         return;
       }
 
-      const pendingData = global.pendingAudio[audioId];
-      
-      // Verify user
-      if (pendingData.userId !== ctx.from.id) {
-        await ctx.answerCbQuery('❌ Помилка доступу');
+      // Check if user is free
+      if (user.isPremium) {
+        await ctx.answerCbQuery('💎 Преміум користувачі мають автоматичне розпізнавання мови');
         return;
       }
 
-      await ctx.answerCbQuery('⏳ Обробляю переклад...');
+      // Set voice language
+      user.setVoiceInputLanguage(languageCode);
+      await user.save();
 
-      // Update processing message
-      await ctx.editMessageText('🆓 Обробляю голосове повідомлення...\n🎤 Розпізнаю мову (Whisper)...');
+      const languageInfo = languageService.getLanguageInfo(languageCode);
+      const targetLang = languageCode === user.languages.primaryLanguage ? 
+        user.languages.secondaryLanguage : user.languages.primaryLanguage;
+      const targetLangInfo = languageService.getLanguageInfo(targetLang);
 
-      try {
-        const user = await databaseService.getUserByTelegramId(ctx.from.id);
-        
-        // Process translation manually with specified languages
-        const result = await openaiService.completeTranslationManual(
-          pendingData.audioPath,
-          fromLang,
-          toLang
-        );
+      const message = `✅ **Мову диктування встановлено!**
 
-        // Update processing message
-        await ctx.editMessageText('🆓 Обробляю голосове повідомлення...\n💾 Зберігаю результат...');
+🎤 **Диктувати:** ${languageInfo.flag} ${languageInfo.name}
+🌍 **Перекладати на:** ${targetLangInfo.flag} ${targetLangInfo.name}
 
-        // Update user stats and token usage
-        await databaseService.incrementUserTranslations(user._id);
-        await databaseService.addUserTokenUsage(user._id, result.tokensUsed || 150);
+🎯 **Тепер надішліть голосове повідомлення**
+⏱️ *Налаштування діють 5 хвилин*`;
 
-        // Clean up pending audio
-        await this.cleanupPendingAudio(audioId);
-
-        // Send translation result via audioHandler
-        const audioHandler = require('./audioHandler');
-        await audioHandler.sendTranslationResult(ctx, result, user);
-
-        // Delete processing message
-        await ctx.telegram.deleteMessage(ctx.chat.id, pendingData.processingMsgId);
-
-      } catch (error) {
-        logger.error('Error processing free user translation:', error);
-        await ctx.editMessageText('❌ Виникла помилка при обробці. Спробуйте надіслати голосове повідомлення знову.');
-        await this.cleanupPendingAudio(audioId);
-      }
-
-    } catch (error) {
-      logger.error('Error in handleFreeUserTranslation:', error);
-      await ctx.answerCbQuery('❌ Виникла помилка');
-    }
-  }
-
-  /**
-   * Handle canceling translation for free users
-   */
-  async handleCancelTranslation(ctx, callbackData) {
-    try {
-      const audioId = callbackData.replace('cancel_', '');
-      
-      // Get pending audio data
-      if (global.pendingAudio && global.pendingAudio[audioId]) {
-        const pendingData = global.pendingAudio[audioId];
-        
-        // Verify user
-        if (pendingData.userId === ctx.from.id) {
-          await this.cleanupPendingAudio(audioId);
-          await ctx.editMessageText('❌ **Переклад скасовано**\n\nНадішліть нове голосове повідомлення для перекладу 🎤');
-          await ctx.answerCbQuery('❌ Переклад скасовано');
-        } else {
-          await ctx.answerCbQuery('❌ Помилка доступу');
+      await ctx.editMessageText(message, {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: '🔄 Змінити мову',
+                callback_data: `set_voice_lang_${targetLang}`
+              }
+            ],
+            [
+              {
+                text: '⚙️ Налаштування',
+                callback_data: 'open_settings'
+              }
+            ]
+          ]
         }
-      } else {
-        await ctx.editMessageText('❌ Сесія завершена. Надішліть голосове повідомлення знову.');
-        await ctx.answerCbQuery('❌ Сесія завершена');
-      }
+      });
+
+      await ctx.answerCbQuery(`✅ Диктувати: ${languageInfo.name}`);
     } catch (error) {
-      logger.error('Error in handleCancelTranslation:', error);
+      logger.error('Error in handleSetVoiceLanguage:', error);
       await ctx.answerCbQuery('❌ Виникла помилка');
     }
   }
 
   /**
-   * Clean up pending audio data
+   * Handle choosing voice language
    */
-  async cleanupPendingAudio(audioId) {
+  async handleChooseVoiceLanguage(ctx) {
     try {
-      if (global.pendingAudio && global.pendingAudio[audioId]) {
-        const audioHandler = require('./audioHandler');
-        await audioHandler.cleanupAudioFile(global.pendingAudio[audioId].audioPath);
-        delete global.pendingAudio[audioId];
-        logger.info(`Cleaned up pending audio: ${audioId}`);
+      const userId = ctx.from.id;
+      
+      // Get user
+      const user = await databaseService.getUserByTelegramId(userId);
+      if (!user) {
+        await ctx.answerCbQuery('❌ Помилка: користувач не знайден');
+        return;
       }
+
+      // Check if user is free
+      if (user.isPremium) {
+        await ctx.answerCbQuery('💎 Преміум користувачі мають автоматичне розпізнавання мови');
+        return;
+      }
+
+      const audioHandler = require('./audioHandler');
+      await audioHandler.showLanguageSelectionForFreeUser(ctx, user);
+      await ctx.answerCbQuery('🎯 Оберіть мову диктування');
     } catch (error) {
-      logger.error('Error cleaning up pending audio:', error);
+      logger.error('Error in handleChooseVoiceLanguage:', error);
+      await ctx.answerCbQuery('❌ Виникла помилка');
     }
   }
+
+
 
   /**
    * Generate progress bar for limits display
@@ -598,10 +633,10 @@ ${userStats.subscription.type === 'free' ? '\n💎 Преміум підписк
       } else if (data.startsWith('lang_')) {
         const [, type, languageCode] = data.split('_');
         await this.handleLanguageSelection(ctx, type, languageCode);
-      } else if (data.startsWith('translate_')) {
-        await this.handleFreeUserTranslation(ctx, data);
-      } else if (data.startsWith('cancel_')) {
-        await this.handleCancelTranslation(ctx, data);
+      } else if (data.startsWith('set_voice_lang_')) {
+        await this.handleSetVoiceLanguage(ctx, data);
+      } else if (data === 'choose_voice_language') {
+        await this.handleChooseVoiceLanguage(ctx);
       } else {
         await ctx.answerCbQuery('❌ Невідома команда');
       }

@@ -93,6 +93,23 @@ const userSchema = new mongoose.Schema({
       type: Boolean,
       default: true  // Enabled by default if user has premium
     }
+  },
+
+  // Temporary state for free users
+  voiceState: {
+    selectedInputLanguage: {
+      type: String,
+      enum: ['uk', 'en', 'ka', 'id', 'ru'],
+      required: false
+    },
+    isWaitingForVoice: {
+      type: Boolean,
+      default: false
+    },
+    stateExpires: {
+      type: Date,
+      required: false
+    }
   }
 }, {
   timestamps: true
@@ -179,6 +196,37 @@ userSchema.methods.getCurrentLimits = function() {
       type: 'free'
     };
   }
+};
+
+// Method to set voice input language for free users
+userSchema.methods.setVoiceInputLanguage = function(languageCode) {
+  this.voiceState.selectedInputLanguage = languageCode;
+  this.voiceState.isWaitingForVoice = true;
+  this.voiceState.stateExpires = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+};
+
+// Method to check if user is waiting for voice and hasn't expired
+userSchema.methods.isWaitingForVoice = function() {
+  if (!this.voiceState.isWaitingForVoice) {
+    return false;
+  }
+  
+  if (this.voiceState.stateExpires && this.voiceState.stateExpires < new Date()) {
+    // State expired, reset
+    this.voiceState.isWaitingForVoice = false;
+    this.voiceState.selectedInputLanguage = null;
+    this.voiceState.stateExpires = null;
+    return false;
+  }
+  
+  return true;
+};
+
+// Method to clear voice state
+userSchema.methods.clearVoiceState = function() {
+  this.voiceState.isWaitingForVoice = false;
+  this.voiceState.selectedInputLanguage = null;
+  this.voiceState.stateExpires = null;
 };
 
 // Static method to find or create user

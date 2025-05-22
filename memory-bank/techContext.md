@@ -6,7 +6,7 @@
 - **Runtime**: Node.js v18+
 - **Bot Framework**: Telegraf.js (Telegram Bot API)
 - **Database**: MongoDB with Mongoose ODM
-- **AI Services**: OpenAI API (Whisper, GPT-4o-nano)
+- **AI Services**: OpenAI API (Whisper, gpt-4o-mini-transcribe)
 - **Deployment**: Docker + Docker Compose
 
 ### Dependencies

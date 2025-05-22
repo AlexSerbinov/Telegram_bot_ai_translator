@@ -23,7 +23,7 @@ This Memory Bank contains comprehensive documentation for the AI Translator Bot 
 ### Key Technologies
 - Node.js + Telegraf.js (Telegram Bot)
 - MongoDB (User data and analytics)
-- OpenAI API (Whisper + GPT-4o-nano)
+- OpenAI API (Whisper + gpt-4o-mini-transcribe)
 - Docker + Docker Compose
 
 ### User Tiers
@@ -39,7 +39,7 @@ This Memory Bank contains comprehensive documentation for the AI Translator Bot 
 2. Added hidden dev commands for testing
 3. Removed chat functionality completely
 4. Enhanced Free user experience with manual language selection
-5. Updated to GPT-4o-nano model
+5. Updated to gpt-4o-mini-transcribe model
 
 ## Next Steps
 1. Implement process management (PM2)

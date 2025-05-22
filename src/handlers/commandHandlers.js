@@ -12,9 +12,94 @@ class CommandHandlers {
       const userId = ctx.from.id;
       const userName = ctx.from.first_name || 'Friend';
       
+      // Create or update user in database
+      await databaseService.createOrUpdateUser({
+        telegramId: userId,
+        username: ctx.from.username,
+        firstName: ctx.from.first_name,
+        lastName: ctx.from.last_name
+      });
+      
       logger.info(`User ${userId} started the bot`);
       
-      const welcomeMessage = `🤖 Привіт, ${userName}! 
+      // Check if user has languages configured
+      const user = await databaseService.getUserByTelegramId(userId);
+      const hasLanguagesConfigured = user && user.languages.primaryLanguage && user.languages.secondaryLanguage;
+      
+      let welcomeMessage, keyboard;
+      
+      if (hasLanguagesConfigured) {
+        // User has languages configured - show working mode
+        const { config } = require('../config/config');
+        const primaryLang = config.languages[user.languages.primaryLanguage];
+        const secondaryLang = config.languages[user.languages.secondaryLanguage];
+        
+        if (user.subscriptionType === 'premium') {
+          // Premium user - show automatic mode
+          welcomeMessage = `🤖 Привіт, ${userName}! 
+
+👑 **Premium режим активний**
+
+Ваші мови: ${primaryLang.flag} ${primaryLang.name} ↔ ${secondaryLang.flag} ${secondaryLang.name}
+
+💡 Система автоматично визначить мову та перекладе на іншу
+
+Тепер ви можете надсилати голосові повідомлення для автоматичного перекладу 🎤`;
+
+          keyboard = {
+            inline_keyboard: [
+              [
+                {
+                  text: '⚙️ Змінити мови',
+                  callback_data: 'open_settings'
+                },
+                {
+                  text: '📊 Мої ліміти',
+                  callback_data: 'show_limits'
+                }
+              ]
+            ]
+          };
+        } else {
+          // Free user - show language selection buttons
+          welcomeMessage = `🤖 Привіт, ${userName}! 
+
+🆓 **Безкоштовний режим**
+
+Ваші мови: ${primaryLang.flag} ${primaryLang.name} ↔ ${secondaryLang.flag} ${secondaryLang.name}
+
+Для безкоштовної версії потрібно спочатку вибрати мову диктування, а потім записати голосове повідомлення.
+
+Оберіть мову диктування:`;
+
+          keyboard = {
+            inline_keyboard: [
+              [
+                {
+                  text: `🎤 Диктувати ${primaryLang.flag}`,
+                  callback_data: `set_voice_lang_${user.languages.primaryLanguage}`
+                },
+                {
+                  text: `🎤 Диктувати ${secondaryLang.flag}`,
+                  callback_data: `set_voice_lang_${user.languages.secondaryLanguage}`
+                }
+              ],
+              [
+                {
+                  text: '⚙️ Змінити мови',
+                  callback_data: 'open_settings'
+                },
+                {
+                  text: '📊 Мої ліміти',
+                  callback_data: 'show_limits'
+                }
+              ]
+            ]
+          };
+        }
+      } else {
+        // User needs to configure languages
+        welcomeMessage = `🤖 Привіт, ${userName}! 
 
 Я AI Translator Bot - твій особистий помічник для перекладу голосових повідомлень.
 
@@ -26,8 +111,7 @@ class CommandHandlers {
 
 ⚙️ Спочатку налаштуйте дві мови командою /settings`;
 
-      await ctx.reply(welcomeMessage, {
-        reply_markup: {
+        keyboard = {
           inline_keyboard: [
             [
               {
@@ -42,7 +126,11 @@ class CommandHandlers {
               }
             ]
           ]
-        }
+        };
+      }
+
+      await ctx.reply(welcomeMessage, {
+        reply_markup: keyboard
       });
     } catch (error) {
       logger.error('Error in handleStart:', error);
@@ -157,7 +245,6 @@ ${currentSettings}
 
 📊 **Активність:**
 • Всього перекладів: ${userStats.stats.totalTranslations}
-• Всього чатів: ${userStats.stats.totalChats}
 
 ${userStats.subscription.type === 'free' ? '\n💎 Розглядайте можливість преміум підписки для необмежених перекладів!' : ''}`;
 

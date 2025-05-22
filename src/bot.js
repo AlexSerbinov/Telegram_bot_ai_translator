@@ -1,3 +1,5 @@
+Error.stackTraceLimit = 200; 
+
 const { Telegraf } = require('telegraf');
 const { config, validateConfig } = require('./config/config');
 const logger = require('./utils/logger');

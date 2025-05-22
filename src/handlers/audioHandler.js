@@ -89,69 +89,83 @@ class AudioHandler {
           // Delete processing message
           await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id);
         } else {
-          // Free users need to manually select language using buttons
-          await ctx.telegram.editMessageText(
-            ctx.chat.id, 
-            processingMsg.message_id, 
-            null, 
-            '🆓 Голосове повідомлення отримано!\n🎯 Оберіть мову, якою ви говорили:'
-          );
+          // Free users need to select language before speaking
+          // Check if user has already selected language
+          if (user.isWaitingForVoice() && user.voiceState.selectedInputLanguage) {
+            // User has selected language, process directly
+            const inputLang = user.voiceState.selectedInputLanguage;
+            const outputLang = inputLang === userSettings.primaryLanguage ? 
+              userSettings.secondaryLanguage : userSettings.primaryLanguage;
 
-          // Store audio path for later processing
-          const audioId = `${ctx.from.id}_${Date.now()}`;
-          // Store in memory for now (in production, use Redis or database)
-          global.pendingAudio = global.pendingAudio || {};
-          global.pendingAudio[audioId] = {
-            audioPath: audioPath,
-            userId: ctx.from.id,
-            userSettings: userSettings,
-            processingMsgId: processingMsg.message_id
-          };
+            await ctx.telegram.editMessageText(
+              ctx.chat.id, 
+              processingMsg.message_id, 
+              null, 
+              `🆓 Обробляю голосове повідомлення...\n🎤 Розпізнаю мову (${languageService.getLanguageInfo(inputLang).name})...`
+            );
 
-          const primaryLang = languageService.getLanguageInfo(userSettings.primaryLanguage);
-          const secondaryLang = languageService.getLanguageInfo(userSettings.secondaryLanguage);
+            try {
+              // Process translation with known language
+              const result = await openaiService.completeTranslationManual(
+                audioPath,
+                inputLang,
+                outputLang
+              );
 
-          await ctx.telegram.editMessageText(
-            ctx.chat.id,
-            processingMsg.message_id,
-            null,
-            `🆓 **Оберіть мову голосового повідомлення:**
+              // Update processing message
+              await ctx.telegram.editMessageText(
+                ctx.chat.id, 
+                processingMsg.message_id, 
+                null, 
+                '🆓 Обробляю голосове повідомлення...\n💾 Зберігаю результат...'
+              );
 
-🎤 Якою мовою ви диктували?`,
-            {
-              parse_mode: 'Markdown',
-              reply_markup: {
-                inline_keyboard: [
-                  [
-                    {
-                      text: `${primaryLang.flag} Диктував ${primaryLang.name}`,
-                      callback_data: `translate_${audioId}_${userSettings.primaryLanguage}_${userSettings.secondaryLanguage}`
-                    }
-                  ],
-                  [
-                    {
-                      text: `${secondaryLang.flag} Диктував ${secondaryLang.name}`,
-                      callback_data: `translate_${audioId}_${userSettings.secondaryLanguage}_${userSettings.primaryLanguage}`
-                    }
-                  ],
-                  [
-                    {
-                      text: '❌ Скасувати',
-                      callback_data: `cancel_${audioId}`
-                    }
-                  ]
-                ]
-              }
+              // Update user stats and token usage
+              await databaseService.incrementUserTranslations(user._id);
+              await databaseService.addUserTokenUsage(user._id, result.tokensUsed || 150);
+
+              // Clear voice state
+              user.clearVoiceState();
+              await user.save();
+
+              // Format and send result
+              await this.sendTranslationResult(ctx, result, user);
+              
+              // Delete processing message
+              await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id);
+
+            } catch (error) {
+              logger.error('Error processing free user translation:', error);
+              await ctx.telegram.editMessageText(
+                ctx.chat.id,
+                processingMsg.message_id,
+                null,
+                '❌ Виникла помилка при обробці. Спробуйте ще раз.'
+              );
+              user.clearVoiceState();
+              await user.save();
             }
-          );
+          } else {
+            // User needs to select language first
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              processingMsg.message_id,
+              null,
+              `🆓 **Спочатку оберіть мову для диктування**
 
-          // Set timeout to clean up pending audio after 5 minutes
-          setTimeout(() => {
-            if (global.pendingAudio && global.pendingAudio[audioId]) {
-              this.cleanupAudioFile(global.pendingAudio[audioId].audioPath);
-              delete global.pendingAudio[audioId];
-            }
-          }, 5 * 60 * 1000);
+❗ Для безкоштовної версії потрібно спочатку вибрати мову, а потім диктувати.
+
+Використовуйте кнопку "🎯 Обрати мову" нижче:`
+            );
+
+            // Clean up the audio file since we can't process it now
+            await this.cleanupAudioFile(audioPath);
+
+            // Show language selection buttons
+            setTimeout(async () => {
+              await this.showLanguageSelectionForFreeUser(ctx, user);
+            }, 2000);
+          }
         }
 
       } finally {
@@ -292,13 +306,17 @@ ${result.backTranslation}`;
           ]
         };
       } else {
-        // Free users get language switching, limits, and upgrade option
+        // Free users get dictation buttons for next translation
         keyboard = {
           inline_keyboard: [
             [
               {
-                text: `🔄 ${primaryLang.flag} ⇄ ${secondaryLang.flag} Поміняти мови`,
-                callback_data: 'switch_languages'
+                text: `🎤 Диктувати ${primaryLang.flag}`,
+                callback_data: `set_voice_lang_${user.languages.primaryLanguage}`
+              },
+              {
+                text: `🎤 Диктувати ${secondaryLang.flag}`,
+                callback_data: `set_voice_lang_${user.languages.secondaryLanguage}`
               }
             ],
             [
@@ -355,6 +373,51 @@ ${result.backTranslation}`;
       }
     } catch (error) {
       logger.error('Error cleaning up audio file:', error);
+    }
+  }
+
+  /**
+   * Show language selection for free users
+   */
+  async showLanguageSelectionForFreeUser(ctx, user) {
+    try {
+      const userSettings = user.languages;
+      const primaryLang = languageService.getLanguageInfo(userSettings.primaryLanguage);
+      const secondaryLang = languageService.getLanguageInfo(userSettings.secondaryLanguage);
+
+      const message = `🎯 **Оберіть мову для диктування**
+
+🎤 Якою мовою ви будете говорити?
+
+Після вибору мови надішліть голосове повідомлення.`;
+
+      await ctx.reply(message, {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: `${primaryLang.flag} Диктувати ${primaryLang.name}`,
+                callback_data: `set_voice_lang_${userSettings.primaryLanguage}`
+              }
+            ],
+            [
+              {
+                text: `${secondaryLang.flag} Диктувати ${secondaryLang.name}`,
+                callback_data: `set_voice_lang_${userSettings.secondaryLanguage}`
+              }
+            ],
+            [
+              {
+                text: '⚙️ Налаштування мов',
+                callback_data: 'open_settings'
+              }
+            ]
+          ]
+        }
+      });
+    } catch (error) {
+      logger.error('Error showing language selection for free user:', error);
     }
   }
 

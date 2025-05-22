@@ -11,7 +11,7 @@ const config = {
     apiKey: process.env.OPENAI_API_KEY,
     models: {
       whisper: 'whisper-1',
-      gpt: 'gpt-4o-nano',
+      gpt: 'gpt-4o-mini',
       tts: 'tts-1'
     }
   },
