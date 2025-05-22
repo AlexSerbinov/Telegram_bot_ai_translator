@@ -24,16 +24,8 @@ class AudioHandler {
       }
 
       const userSettings = user.languages;
-      logger.info(`Processing voice message from user ${userId}`);
+      logger.info(`Processing voice message from user ${userId} (${user.isPremium ? 'Premium' : 'Free'})`);
 
-      // Get or create active chat with current language settings
-      const languagePair = {
-        from: userSettings.primaryLanguage,
-        to: userSettings.secondaryLanguage
-      };
-      
-      const activeChat = await databaseService.getOrCreateUserActiveChat(user._id, languagePair);
-      
       // Send processing message
       const processingMsg = await ctx.reply('🎤 Обробляю голосове повідомлення...\n⏳ Розпізнаю мову...');
       
@@ -52,21 +44,49 @@ class AudioHandler {
         // Check if user can make translation (token limits)
         const canTranslate = await databaseService.canUserMakeTranslation(user._id, 150);
         if (!canTranslate) {
+          const limits = user.getCurrentLimits();
           await ctx.telegram.editMessageText(
             ctx.chat.id,
             processingMsg.message_id,
             null,
-            '⚠️ **Ліміт вичерпано**\n\nВи досягли денного або місячного ліміту використання.\n\n💎 Розглядайте можливість преміум підписки для необмежених перекладів!'
+            `⚠️ **Ліміт вичерпано**\n\n${limits.type === 'premium' ? '👑' : '🆓'} Ви досягли ${limits.type === 'premium' ? 'преміум' : 'безкоштовного'} ліміту використання.\n\n💎 ${limits.type === 'free' ? 'Розглядайте можливість преміум підписки для x10 більших лімітів!' : 'Спробуйте пізніше.'}`
           );
           return;
         }
 
-        // Process translation with automatic language detection
-        const result = await openaiService.completeTranslationAuto(
-          audioPath,
-          userSettings.primaryLanguage,
-          userSettings.secondaryLanguage
-        );
+        let result;
+        
+        // Check if user is premium
+        if (user.isPremium && user.hasPremiumFeature('autoLanguageDetection')) {
+          // Premium users get automatic language detection with GPT enhancement
+          await ctx.telegram.editMessageText(
+            ctx.chat.id, 
+            processingMsg.message_id, 
+            null, 
+            '👑 Обробляю голосове повідомлення...\n🧠 Автоматичне розпізнавання мови (GPT + Whisper)...'
+          );
+          
+          result = await openaiService.completeTranslationAuto(
+            audioPath,
+            userSettings.primaryLanguage,
+            userSettings.secondaryLanguage,
+            true // isPremium = true
+          );
+        } else {
+          // Free users need to select language manually (we'll use primary as default for now)
+          await ctx.telegram.editMessageText(
+            ctx.chat.id, 
+            processingMsg.message_id, 
+            null, 
+            '🆓 Обробляю голосове повідомлення...\n🎤 Базове розпізнавання мови...'
+          );
+          
+          result = await openaiService.completeTranslationManual(
+            audioPath,
+            userSettings.primaryLanguage,
+            userSettings.secondaryLanguage
+          );
+        }
 
         // Update processing message
         await ctx.telegram.editMessageText(
@@ -76,32 +96,12 @@ class AudioHandler {
           '🎤 Обробляю голосове повідомлення...\n💾 Зберігаю результат...'
         );
 
-        // Save translation to database
-        const translationData = {
-          original: {
-            text: result.original,
-            language: result.detectedLanguage
-          },
-          translated: {
-            text: result.translated,
-            language: result.targetLanguage
-          },
-          backTranslation: result.backTranslation,
-          tokensUsed: result.tokensUsed || 150,
-          audioFile: {
-            telegramFileId: ctx.message.voice.file_id,
-            duration: ctx.message.voice.duration,
-            size: ctx.message.voice.file_size
-          }
-        };
-
-        await databaseService.addTranslationToChat(activeChat._id, translationData);
-        
-        // Add token usage to user
-        await databaseService.addUserTokenUsage(user._id, translationData.tokensUsed);
+        // Update user stats and token usage
+        await databaseService.incrementUserTranslations(user._id);
+        await databaseService.addUserTokenUsage(user._id, result.tokensUsed || 150);
 
         // Format and send result
-        await this.sendTranslationResult(ctx, result, userSettings, activeChat);
+        await this.sendTranslationResult(ctx, result, user);
         
         // Delete processing message
         await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id);
@@ -164,73 +164,113 @@ class AudioHandler {
   /**
    * Send formatted translation result
    */
-  async sendTranslationResult(ctx, result, userSettings, activeChat) {
+  async sendTranslationResult(ctx, result, user) {
     try {
       const detectedLang = languageService.getLanguageInfo(result.detectedLanguage);
       const targetLang = languageService.getLanguageInfo(result.targetLanguage);
-      const primaryLang = languageService.getLanguageInfo(userSettings.primaryLanguage);
-      const secondaryLang = languageService.getLanguageInfo(userSettings.secondaryLanguage);
+      const primaryLang = languageService.getLanguageInfo(user.languages.primaryLanguage);
+      const secondaryLang = languageService.getLanguageInfo(user.languages.secondaryLanguage);
       
-      // Build language detection info if available
-      let detectionInfo = '';
-      if (result.whisperDetection && result.gptDetection) {
-        const whisperLang = languageService.getLanguageInfo(result.whisperDetection);
-        const gptLang = languageService.getLanguageInfo(result.gptDetection);
-        
-        if (result.whisperDetection === result.gptDetection) {
-          detectionInfo = `\n🔍 *Розпізнавання:* Whisper та GPT погодились на ${detectedLang.flag} ${detectedLang.name}`;
-        } else {
-          detectionInfo = `\n🔍 *Розпізнавання:* Whisper: ${whisperLang.flag} ${whisperLang.name}, GPT: ${gptLang.flag} ${gptLang.name} → Обрано: ${detectedLang.flag} ${detectedLang.name}`;
-        }
-      }
-      
-      const message = `🌍 **${targetLang.flag} ПЕРЕКЛАД:**
+      // Build main translation message
+      let message = `🌍 **${targetLang.flag} ПЕРЕКЛАД:**
 **${result.translated}**
 
 🎤 *Розпізнано* (${detectedLang.flag} ${detectedLang.name}):
-${result.original}
+${result.original}`;
 
-🔄 *Зворотній переклад* (${detectedLang.flag} ${detectedLang.name}):
-${result.backTranslation}
+      // Add back-translation for Premium users only
+      if (result.isPremium && result.backTranslation) {
+        message += `\n\n🔄 *Зворотній переклад* (${detectedLang.flag} ${detectedLang.name}):
+${result.backTranslation}`;
+      }
 
-🤖 *Ваші мови:* ${primaryLang.flag} ${primaryLang.name} ⇄ ${secondaryLang.flag} ${secondaryLang.name}
-💬 *Чат:* ${activeChat.title} | 📊 ${activeChat.stats.totalTranslations} перекладів${detectionInfo}
+      // Add language detection info based on user type
+      let detectionInfo = '';
+      if (result.isPremium && result.whisperDetection && result.gptDetection) {
+        const whisperLang = languageService.getLanguageInfo(result.whisperDetection);
+        const gptLang = languageService.getLanguageInfo(result.gptDetection);
+        
+        if (result.whisperDetection === result.gptDetected) {
+          detectionInfo = `\n🔍 *Розпізнавання:* 👑 Whisper + GPT погодились: ${detectedLang.flag} ${detectedLang.name}`;
+        } else {
+          detectionInfo = `\n🔍 *Розпізнавання:* 👑 Whisper: ${whisperLang.flag} ${whisperLang.name}, GPT: ${gptLang.flag} ${gptLang.name} → ${detectedLang.flag} ${detectedLang.name}`;
+        }
+      } else if (!result.isPremium) {
+        detectionInfo = `\n🔍 *Розпізнавання:* 🆓 Базове (тільки Whisper)`;
+      }
 
-💡 Покращена система автоматично розпізнала мову та перевела на відповідну.`;
+      // Add user info and statistics
+      message += `\n\n🤖 *Ваші мови:* ${primaryLang.flag} ${primaryLang.name} ⇄ ${secondaryLang.flag} ${secondaryLang.name}
+📊 *Всього перекладів:* ${user.stats.totalTranslations + 1}${detectionInfo}`;
 
-      const keyboard = {
-        inline_keyboard: [
-          [
-            {
-              text: `🔄 ${primaryLang.flag} ⇄ ${secondaryLang.flag} Switch`,
-              callback_data: 'switch_and_speak'
-            }
-          ],
-          [
-            {
-              text: '💬 Новий чат',
-              callback_data: 'new_chat'
-            },
-            {
-              text: '📚 Історія чатів',
-              callback_data: 'chat_history'
-            }
-          ],
-          [
-            {
-              text: '📊 Мої ліміти',
-              callback_data: 'show_limits'
-            }
+      // Add subscription info and features
+      if (result.isPremium) {
+        message += `\n\n👑 **ПРЕМІУМ ФУНКЦІЇ:**
+✅ Автоматичне розпізнавання мови (GPT + Whisper)
+✅ Зворотній переклад для перевірки
+✅ x10 більше лімітів токенів`;
+      } else {
+        message += `\n\n🆓 **БЕЗКОШТОВНА ВЕРСІЯ**
+💡 Преміум функції недоступні:
+• Автоматичне розпізнавання мови
+• Зворотній переклад
+• Збільшені ліміти`;
+      }
+
+      // Build different keyboards for Premium and Free users
+      let keyboard;
+      if (result.isPremium) {
+        // Premium users get language switching and limits
+        keyboard = {
+          inline_keyboard: [
+            [
+              {
+                text: `🔄 ${primaryLang.flag} ⇄ ${secondaryLang.flag} Поміняти мови`,
+                callback_data: 'switch_languages'
+              }
+            ],
+            [
+              {
+                text: '📊 Мої ліміти',
+                callback_data: 'show_limits'
+              },
+              {
+                text: '⚙️ Налаштування',
+                callback_data: 'settings'
+              }
+            ]
           ]
-        ]
-      };
+        };
+      } else {
+        // Free users get language switching, limits, and upgrade option
+        keyboard = {
+          inline_keyboard: [
+            [
+              {
+                text: `🔄 ${primaryLang.flag} ⇄ ${secondaryLang.flag} Поміняти мови`,
+                callback_data: 'switch_languages'
+              }
+            ],
+            [
+              {
+                text: '📊 Мої ліміти',
+                callback_data: 'show_limits'
+              },
+              {
+                text: '💎 Преміум',
+                callback_data: 'upgrade_premium'
+              }
+            ]
+          ]
+        };
+      }
 
       await ctx.reply(message, {
         parse_mode: 'Markdown',
         reply_markup: keyboard
       });
 
-      logger.info(`Translation sent for user ${ctx.from.id} in chat ${activeChat._id}`);
+      logger.info(`${result.isPremium ? 'Premium' : 'Free'} translation sent for user ${ctx.from.id}`);
     } catch (error) {
       logger.error('Error sending translation result:', error);
       throw error;

@@ -211,11 +211,11 @@ class OpenAIService {
   }
 
   /**
-   * Complete translation flow with automatic language detection
+   * Complete translation flow with automatic language detection (Premium)
    */
-  async completeTranslationAuto(audioFilePath, primaryLanguage, secondaryLanguage) {
+  async completeTranslationAuto(audioFilePath, primaryLanguage, secondaryLanguage, isPremium = false) {
     try {
-      logger.info('Starting automatic translation flow with improved language detection');
+      logger.info(`Starting translation flow - ${isPremium ? '👑 Premium' : '🆓 Free'} user`);
       
       // 1. Speech to text with language detection via Whisper
       const speechResult = await this.speechToText(audioFilePath, 'auto');
@@ -224,34 +224,42 @@ class OpenAIService {
       
       logger.info(`Whisper detected: ${whisperDetectedLanguage}`);
       
-      // 2. Double-check language detection with GPT (for better accuracy)
-      const userLanguages = [primaryLanguage, secondaryLanguage];
-      const gptDetectedLanguage = await this.detectTextLanguage(originalText, userLanguages);
-      
-      logger.info(`GPT detected: ${gptDetectedLanguage}`);
-      
-      // 3. Choose the most reliable language detection (GPT has priority for better accuracy)
       let finalDetectedLanguage = whisperDetectedLanguage;
+      let gptDetectedLanguage = null;
+      let detectionMethod = 'Whisper Only';
       
-      // If both Whisper and GPT agree, use that
-      if (whisperDetectedLanguage === gptDetectedLanguage) {
-        finalDetectedLanguage = whisperDetectedLanguage;
-        logger.info(`✅ Both models agree: ${finalDetectedLanguage}`);
-      }
-      // If GPT detected one of user's languages, trust GPT (higher priority)
-      else if (userLanguages.includes(gptDetectedLanguage)) {
-        finalDetectedLanguage = gptDetectedLanguage;
-        logger.info(`🧠 Using GPT detection (${gptDetectedLanguage}) - GPT has priority for text analysis`);
-      }
-      // If only Whisper detected one of user's languages, use Whisper
-      else if (userLanguages.includes(whisperDetectedLanguage)) {
-        finalDetectedLanguage = whisperDetectedLanguage;
-        logger.info(`🎤 Using Whisper detection (${whisperDetectedLanguage}) - only Whisper detected user language`);
-      }
-      // Neither detected user's languages, but GPT is generally more accurate for text analysis
-      else {
-        finalDetectedLanguage = gptDetectedLanguage;
-        logger.info(`🔍 Using GPT detection (${gptDetectedLanguage}) over Whisper (${whisperDetectedLanguage}) - GPT better for text analysis`);
+      // 2. Premium users get GPT language detection for better accuracy
+      if (isPremium) {
+        const userLanguages = [primaryLanguage, secondaryLanguage];
+        gptDetectedLanguage = await this.detectTextLanguage(originalText, userLanguages);
+        logger.info(`GPT detected: ${gptDetectedLanguage}`);
+        
+                // 3. Choose the most reliable language detection (GPT has priority for better accuracy)
+        detectionMethod = 'Premium: Whisper + GPT';
+        
+        // If both Whisper and GPT agree, use that
+        if (whisperDetectedLanguage === gptDetectedLanguage) {
+          finalDetectedLanguage = whisperDetectedLanguage;
+          logger.info(`✅ Both models agree: ${finalDetectedLanguage}`);
+        }
+        // If GPT detected one of user's languages, trust GPT (higher priority)
+        else if (userLanguages.includes(gptDetectedLanguage)) {
+          finalDetectedLanguage = gptDetectedLanguage;
+          logger.info(`🧠 Using GPT detection (${gptDetectedLanguage}) - GPT has priority for text analysis`);
+        }
+        // If only Whisper detected one of user's languages, use Whisper
+        else if (userLanguages.includes(whisperDetectedLanguage)) {
+          finalDetectedLanguage = whisperDetectedLanguage;
+          logger.info(`🎤 Using Whisper detection (${whisperDetectedLanguage}) - only Whisper detected user language`);
+        }
+        // Neither detected user's languages, but GPT is generally more accurate for text analysis
+        else {
+          finalDetectedLanguage = gptDetectedLanguage;
+          logger.info(`🔍 Using GPT detection (${gptDetectedLanguage}) over Whisper (${whisperDetectedLanguage}) - GPT better for text analysis`);
+        }
+      } else {
+        // Free users only get Whisper detection
+        logger.info(`🆓 Free user: Using Whisper detection only: ${finalDetectedLanguage}`);
       }
       
       // 4. Determine target language
@@ -262,8 +270,17 @@ class OpenAIService {
       // 5. Translate
       const translatedText = await this.translateText(originalText, finalDetectedLanguage, targetLanguage);
       
-      // 6. Back-translate for verification
-      const backTranslation = await this.backTranslate(translatedText, targetLanguage, finalDetectedLanguage);
+      // 6. Back-translate for verification (Premium feature only)
+      let backTranslation = null;
+      let additionalTokens = 0;
+      
+      if (isPremium) {
+        backTranslation = await this.backTranslate(translatedText, targetLanguage, finalDetectedLanguage);
+        additionalTokens = 10; // GPT language detection + back-translation tokens
+        logger.info('👑 Premium: Back-translation completed');
+      } else {
+        logger.info('🆓 Free user: Back-translation not available');
+      }
       
       const result = {
         original: originalText,
@@ -273,13 +290,50 @@ class OpenAIService {
         targetLanguage: targetLanguage,
         whisperDetection: whisperDetectedLanguage,
         gptDetection: gptDetectedLanguage,
-        tokensUsed: this.estimateTokenUsage(originalText, translatedText) + 10 // +10 for language detection
+        detectionMethod: detectionMethod,
+        isPremium: isPremium,
+        tokensUsed: this.estimateTokenUsage(originalText, translatedText) + additionalTokens
       };
       
-      logger.info('Improved automatic translation flow finished successfully');
+      logger.info(`${isPremium ? '👑 Premium' : '🆓 Free'} translation flow finished successfully`);
       return result;
     } catch (error) {
       logger.error('Error in automatic translation flow:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Complete translation flow for Free users (manual language selection)
+   */
+  async completeTranslationManual(audioFilePath, fromLanguage, toLanguage) {
+    try {
+      logger.info('🆓 Starting manual translation flow for Free user');
+      
+      // 1. Speech to text (with specified language for better accuracy)
+      const speechResult = await this.speechToText(audioFilePath, fromLanguage);
+      const originalText = speechResult.text;
+      
+      // 2. Translate
+      const translatedText = await this.translateText(originalText, fromLanguage, toLanguage);
+      
+      const result = {
+        original: originalText,
+        translated: translatedText,
+        backTranslation: null, // Not available for free users
+        detectedLanguage: fromLanguage, // User manually selected
+        targetLanguage: toLanguage,
+        whisperDetection: fromLanguage,
+        gptDetection: null, // Not used for free users
+        detectionMethod: 'Manual Selection',
+        isPremium: false,
+        tokensUsed: this.estimateTokenUsage(originalText, translatedText)
+      };
+      
+      logger.info('🆓 Manual translation flow finished successfully');
+      return result;
+    } catch (error) {
+      logger.error('Error in manual translation flow:', error);
       throw error;
     }
   }

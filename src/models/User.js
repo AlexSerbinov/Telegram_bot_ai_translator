@@ -71,26 +71,27 @@ const userSchema = new mongoose.Schema({
     }
   },
 
-  // Active chat
-  activeChat: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Chat',
-    required: false
-  },
-
   // User stats
   stats: {
     totalTranslations: {
       type: Number,
       default: 0
     },
-    totalChats: {
-      type: Number,
-      default: 0
-    },
     favoriteLanguagePair: {
       from: String,
       to: String
+    }
+  },
+
+  // Premium features preferences
+  preferences: {
+    autoLanguageDetection: {
+      type: Boolean,
+      default: true  // Enabled by default if user has premium
+    },
+    backTranslation: {
+      type: Boolean,
+      default: true  // Enabled by default if user has premium
     }
   }
 }, {
@@ -110,10 +111,6 @@ userSchema.virtual('isPremium').get(function() {
 
 // Method to check if user can make translation (token limit)
 userSchema.methods.canMakeTranslation = function(estimatedTokens = 100) {
-  if (this.isPremium) {
-    return true;
-  }
-  
   // Check daily limit
   const today = new Date();
   const lastReset = new Date(this.tokenUsage.lastDailyReset);
@@ -136,8 +133,12 @@ userSchema.methods.canMakeTranslation = function(estimatedTokens = 100) {
   
   const { tokenLimits } = require('../config/config').config;
   
-  return (this.tokenUsage.dailyUsed + estimatedTokens) <= tokenLimits.freeTierDaily &&
-         (this.tokenUsage.monthlyUsed + estimatedTokens) <= tokenLimits.freeTierMonthly;
+  // Get limits based on subscription type
+  const dailyLimit = this.isPremium ? tokenLimits.premiumTierDaily : tokenLimits.freeTierDaily;
+  const monthlyLimit = this.isPremium ? tokenLimits.premiumTierMonthly : tokenLimits.freeTierMonthly;
+  
+  return (this.tokenUsage.dailyUsed + estimatedTokens) <= dailyLimit &&
+         (this.tokenUsage.monthlyUsed + estimatedTokens) <= monthlyLimit;
 };
 
 // Method to add token usage
@@ -145,6 +146,39 @@ userSchema.methods.addTokenUsage = function(tokens) {
   this.tokenUsage.dailyUsed += tokens;
   this.tokenUsage.monthlyUsed += tokens;
   this.tokenUsage.totalUsed += tokens;
+};
+
+// Method to check if user has premium feature access
+userSchema.methods.hasPremiumFeature = function(featureName) {
+  if (!this.isPremium) {
+    return false;
+  }
+  
+  const { premium } = require('../config/config').config;
+  return premium.features[featureName] === true;
+};
+
+// Method to get user's current limits
+userSchema.methods.getCurrentLimits = function() {
+  const { tokenLimits } = require('../config/config').config;
+  
+  if (this.isPremium) {
+    return {
+      dailyLimit: tokenLimits.premiumTierDaily,
+      monthlyLimit: tokenLimits.premiumTierMonthly,
+      dailyUsed: this.tokenUsage.dailyUsed,
+      monthlyUsed: this.tokenUsage.monthlyUsed,
+      type: 'premium'
+    };
+  } else {
+    return {
+      dailyLimit: tokenLimits.freeTierDaily,
+      monthlyLimit: tokenLimits.freeTierMonthly,
+      dailyUsed: this.tokenUsage.dailyUsed,
+      monthlyUsed: this.tokenUsage.monthlyUsed,
+      type: 'free'
+    };
+  }
 };
 
 // Static method to find or create user

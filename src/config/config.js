@@ -40,8 +40,24 @@ const config = {
 
   // Token Limits Configuration
   tokenLimits: {
+    // Free tier limits
     freeTierDaily: parseInt(process.env.FREE_TIER_DAILY_TOKENS) || 10000,
-    freeTierMonthly: parseInt(process.env.FREE_TIER_MONTHLY_TOKENS) || 100000
+    freeTierMonthly: parseInt(process.env.FREE_TIER_MONTHLY_TOKENS) || 100000,
+    
+    // Premium tier limits (x10 more)
+    premiumTierDaily: parseInt(process.env.PREMIUM_TIER_DAILY_TOKENS) || 100000,
+    premiumTierMonthly: parseInt(process.env.PREMIUM_TIER_MONTHLY_TOKENS) || 1000000
+  },
+
+  // Premium features configuration
+  premium: {
+    features: {
+      autoLanguageDetection: true,    // Automatic language detection (free users must select manually)
+      backTranslation: true,          // Back translation for verification
+      advancedModels: true,           // Use GPT for language detection instead of just Whisper
+      unlimitedChats: true,           // No limit on chats (if we add them back later)
+      prioritySupport: true           // Priority customer support
+    }
   }
 };
 

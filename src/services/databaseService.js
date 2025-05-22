@@ -4,7 +4,6 @@ const logger = require('../utils/logger');
 
 // Import models
 const User = require('../models/User');
-const Chat = require('../models/Chat');
 
 class DatabaseService {
   constructor() {
@@ -96,7 +95,7 @@ class DatabaseService {
    */
   async getUserByTelegramId(telegramId) {
     try {
-      return await User.findOne({ telegramId }).populate('activeChat');
+      return await User.findOne({ telegramId });
     } catch (error) {
       logger.error('Error getting user by Telegram ID:', error);
       throw error;
@@ -152,130 +151,23 @@ class DatabaseService {
     }
   }
 
-  // Chat-related methods
-
   /**
-   * Create new chat for user
+   * Increment user translation count
    */
-  async createChat(userId, languagePair) {
-    try {
-      const chat = await Chat.createForUser(userId, languagePair);
-      
-      // Update user's active chat and stats
-      await User.findByIdAndUpdate(userId, {
-        activeChat: chat._id,
-        $inc: { 'stats.totalChats': 1 }
-      });
-
-      return chat;
-    } catch (error) {
-      logger.error('Error creating chat:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get user's active chat or create new one
-   */
-  async getOrCreateUserActiveChat(userId, languagePair) {
-    try {
-      const user = await User.findById(userId).populate('activeChat');
-      
-      if (user.activeChat && user.activeChat.status === 'active') {
-        return user.activeChat;
-      }
-      
-      // Create new chat with current language pair
-      return await this.createChat(userId, languagePair);
-    } catch (error) {
-      logger.error('Error getting/creating active chat:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Add translation to chat
-   */
-  async addTranslationToChat(chatId, translationData) {
-    try {
-      const chat = await Chat.findById(chatId);
-      if (!chat) {
-        throw new Error('Chat not found');
-      }
-
-      await chat.addTranslation(translationData);
-      
-      // Update title if it's the first translation
-      chat.updateTitleFromTranslation();
-      await chat.save();
-
-      // Update user stats
-      await User.findByIdAndUpdate(chat.user, {
-        $inc: { 'stats.totalTranslations': 1 }
-      });
-
-      return chat;
-    } catch (error) {
-      logger.error('Error adding translation to chat:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get user's chat list
-   */
-  async getUserChats(userId, limit = 10) {
-    try {
-      return await Chat.getUserActiveChats(userId, limit);
-    } catch (error) {
-      logger.error('Error getting user chats:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get chat with translations
-   */
-  async getChatWithTranslations(chatId, limit = 20) {
-    try {
-      return await Chat.getChatWithTranslations(chatId, limit);
-    } catch (error) {
-      logger.error('Error getting chat with translations:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Set user's active chat
-   */
-  async setUserActiveChat(userId, chatId) {
+  async incrementUserTranslations(userId) {
     try {
       return await User.findByIdAndUpdate(
         userId,
-        { activeChat: chatId },
+        { $inc: { 'stats.totalTranslations': 1 } },
         { new: true }
       );
     } catch (error) {
-      logger.error('Error setting user active chat:', error);
+      logger.error('Error incrementing user translations:', error);
       throw error;
     }
   }
 
-  /**
-   * Archive chat
-   */
-  async archiveChat(chatId) {
-    try {
-      return await Chat.findByIdAndUpdate(
-        chatId,
-        { status: 'archived' },
-        { new: true }
-      );
-    } catch (error) {
-      logger.error('Error archiving chat:', error);
-      throw error;
-    }
-  }
+
 
   // Analytics and stats methods
 
@@ -297,18 +189,15 @@ class DatabaseService {
    */
   async getGlobalStats() {
     try {
-      const [totalUsers, totalChats, totalTranslations] = await Promise.all([
+      const [totalUsers, totalTranslations] = await Promise.all([
         User.countDocuments(),
-        Chat.countDocuments({ status: 'active' }),
-        Chat.aggregate([
-          { $match: { status: 'active' } },
+        User.aggregate([
           { $group: { _id: null, total: { $sum: '$stats.totalTranslations' } } }
         ])
       ]);
 
       return {
         totalUsers,
-        totalChats,
         totalTranslations: totalTranslations[0]?.total || 0
       };
     } catch (error) {
