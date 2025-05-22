@@ -37,16 +37,6 @@ class CommandHandlers {
             ],
             [
               {
-                text: '💬 Новий чат',
-                callback_data: 'new_chat'
-              },
-              {
-                text: '📚 Історія чатів',
-                callback_data: 'chat_history'
-              }
-            ],
-            [
-              {
                 text: '📊 Мої ліміти',
                 callback_data: 'show_limits'
               }
@@ -106,16 +96,6 @@ ${currentSettings}
               {
                 text: '⚙️ Налаштування мов',
                 callback_data: 'open_settings'
-              }
-            ],
-            [
-              {
-                text: '💬 Новий чат',
-                callback_data: 'new_chat'
-              },
-              {
-                text: '📚 Історія чатів',
-                callback_data: 'chat_history'
               }
             ],
             [
@@ -187,12 +167,12 @@ ${userStats.subscription.type === 'free' ? '\n💎 Розглядайте мож
           inline_keyboard: [
             [
               {
-                text: '📚 Історія чатів',
-                callback_data: 'chat_history'
+                text: '📊 Мої ліміти',
+                callback_data: 'show_limits'
               },
               {
-                text: '💬 Новий чат',
-                callback_data: 'new_chat'
+                text: '⚙️ Налаштування',
+                callback_data: 'open_settings'
               }
             ]
           ]
@@ -261,12 +241,12 @@ ${userStats.subscription.type === 'free' ? '\n💎 Преміум підписк
           inline_keyboard: [
             [
               {
-                text: '💬 Новий чат',
-                callback_data: 'new_chat'
-              },
-              {
                 text: '⚙️ Налаштування',
                 callback_data: 'open_settings'
+              },
+              {
+                text: '📖 Довідка',
+                callback_data: 'show_help'
               }
             ]
           ]
@@ -372,6 +352,58 @@ ${userStats.subscription.type === 'free' ? '\n💎 Преміум підписк
       });
     } catch (error) {
       logger.error('Error in handleUnknownText:', error);
+    }
+  }
+
+  /**
+   * Handle /go_premium command (development only)
+   */
+  async handleGoPremium(ctx) {
+    try {
+      const userId = ctx.from.id;
+      logger.info(`DEV: User ${userId} requested premium upgrade`);
+      
+      const user = await databaseService.getUserByTelegramId(userId);
+      if (!user) {
+        await ctx.reply('❌ Помилка: користувач не знайден.');
+        return;
+      }
+
+      // Set premium subscription
+      user.subscription.type = 'premium';
+      user.subscription.expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // 1 year
+      await user.save();
+
+      await ctx.reply('🎉 Ви отримали преміум статус! 👑\n\n✅ Автоматичне розпізнавання мови\n✅ Зворотний переклад\n✅ x10 більше лімітів');
+    } catch (error) {
+      logger.error('Error in handleGoPremium:', error);
+      await ctx.reply('❌ Виникла помилка.');
+    }
+  }
+
+  /**
+   * Handle /go_free command (development only)
+   */
+  async handleGoFree(ctx) {
+    try {
+      const userId = ctx.from.id;
+      logger.info(`DEV: User ${userId} requested free downgrade`);
+      
+      const user = await databaseService.getUserByTelegramId(userId);
+      if (!user) {
+        await ctx.reply('❌ Помилка: користувач не знайден.');
+        return;
+      }
+
+      // Set free subscription
+      user.subscription.type = 'free';
+      user.subscription.expiresAt = null;
+      await user.save();
+
+      await ctx.reply('🆓 Ви перейшли на безкоштовний тариф.\n\n⚠️ Преміум функції недоступні:\n• Автоматичне розпізнавання мови\n• Зворотний переклад\n• Збільшені ліміти');
+    } catch (error) {
+      logger.error('Error in handleGoFree:', error);
+      await ctx.reply('❌ Виникла помилка.');
     }
   }
 }

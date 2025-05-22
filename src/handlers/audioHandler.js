@@ -54,8 +54,6 @@ class AudioHandler {
           return;
         }
 
-        let result;
-        
         // Check if user is premium
         if (user.isPremium && user.hasPremiumFeature('autoLanguageDetection')) {
           // Premium users get automatic language detection with GPT enhancement
@@ -66,49 +64,101 @@ class AudioHandler {
             '👑 Обробляю голосове повідомлення...\n🧠 Автоматичне розпізнавання мови (GPT + Whisper)...'
           );
           
-          result = await openaiService.completeTranslationAuto(
+          const result = await openaiService.completeTranslationAuto(
             audioPath,
             userSettings.primaryLanguage,
             userSettings.secondaryLanguage,
             true // isPremium = true
           );
-        } else {
-          // Free users need to select language manually (we'll use primary as default for now)
+
+          // Update processing message
           await ctx.telegram.editMessageText(
             ctx.chat.id, 
             processingMsg.message_id, 
             null, 
-            '🆓 Обробляю голосове повідомлення...\n🎤 Базове розпізнавання мови...'
+            '🎤 Обробляю голосове повідомлення...\n💾 Зберігаю результат...'
           );
+
+          // Update user stats and token usage
+          await databaseService.incrementUserTranslations(user._id);
+          await databaseService.addUserTokenUsage(user._id, result.tokensUsed || 150);
+
+          // Format and send result
+          await this.sendTranslationResult(ctx, result, user);
           
-          result = await openaiService.completeTranslationManual(
-            audioPath,
-            userSettings.primaryLanguage,
-            userSettings.secondaryLanguage
+          // Delete processing message
+          await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id);
+        } else {
+          // Free users need to manually select language using buttons
+          await ctx.telegram.editMessageText(
+            ctx.chat.id, 
+            processingMsg.message_id, 
+            null, 
+            '🆓 Голосове повідомлення отримано!\n🎯 Оберіть мову, якою ви говорили:'
           );
+
+          // Store audio path for later processing
+          const audioId = `${ctx.from.id}_${Date.now()}`;
+          // Store in memory for now (in production, use Redis or database)
+          global.pendingAudio = global.pendingAudio || {};
+          global.pendingAudio[audioId] = {
+            audioPath: audioPath,
+            userId: ctx.from.id,
+            userSettings: userSettings,
+            processingMsgId: processingMsg.message_id
+          };
+
+          const primaryLang = languageService.getLanguageInfo(userSettings.primaryLanguage);
+          const secondaryLang = languageService.getLanguageInfo(userSettings.secondaryLanguage);
+
+          await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            processingMsg.message_id,
+            null,
+            `🆓 **Оберіть мову голосового повідомлення:**
+
+🎤 Якою мовою ви диктували?`,
+            {
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    {
+                      text: `${primaryLang.flag} Диктував ${primaryLang.name}`,
+                      callback_data: `translate_${audioId}_${userSettings.primaryLanguage}_${userSettings.secondaryLanguage}`
+                    }
+                  ],
+                  [
+                    {
+                      text: `${secondaryLang.flag} Диктував ${secondaryLang.name}`,
+                      callback_data: `translate_${audioId}_${userSettings.secondaryLanguage}_${userSettings.primaryLanguage}`
+                    }
+                  ],
+                  [
+                    {
+                      text: '❌ Скасувати',
+                      callback_data: `cancel_${audioId}`
+                    }
+                  ]
+                ]
+              }
+            }
+          );
+
+          // Set timeout to clean up pending audio after 5 minutes
+          setTimeout(() => {
+            if (global.pendingAudio && global.pendingAudio[audioId]) {
+              this.cleanupAudioFile(global.pendingAudio[audioId].audioPath);
+              delete global.pendingAudio[audioId];
+            }
+          }, 5 * 60 * 1000);
         }
 
-        // Update processing message
-        await ctx.telegram.editMessageText(
-          ctx.chat.id, 
-          processingMsg.message_id, 
-          null, 
-          '🎤 Обробляю голосове повідомлення...\n💾 Зберігаю результат...'
-        );
-
-        // Update user stats and token usage
-        await databaseService.incrementUserTranslations(user._id);
-        await databaseService.addUserTokenUsage(user._id, result.tokensUsed || 150);
-
-        // Format and send result
-        await this.sendTranslationResult(ctx, result, user);
-        
-        // Delete processing message
-        await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id);
-
       } finally {
-        // Clean up audio file
-        await this.cleanupAudioFile(audioPath);
+        // Clean up audio file only for premium users (free users need it for later processing)
+        if (user.isPremium && user.hasPremiumFeature('autoLanguageDetection')) {
+          await this.cleanupAudioFile(audioPath);
+        }
       }
 
     } catch (error) {
@@ -236,7 +286,7 @@ ${result.backTranslation}`;
               },
               {
                 text: '⚙️ Налаштування',
-                callback_data: 'settings'
+                callback_data: 'open_settings'
               }
             ]
           ]

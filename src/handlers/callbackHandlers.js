@@ -205,21 +205,34 @@ ${settingsText}
   }
 
   /**
-   * Handle settings done
+   * Handle settings done (close settings)
    */
   async handleSettingsDone(ctx) {
     try {
-      const userId = ctx.from.id;
-      const settings = await languageService.formatCurrentSettings(userId);
+      const settingsText = await languageService.formatCurrentSettings(ctx.from.id);
       
       const message = `✅ **Налаштування збережено!**
 
-${settings}
+${settingsText}
 
-Тепер надішліть голосове повідомлення для перекладу 🎤`;
+Тепер ви можете надсилати голосові повідомлення для автоматичного перекладу 🎤`;
 
       await ctx.editMessageText(message, {
-        parse_mode: 'Markdown'
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: '📊 Мої ліміти',
+                callback_data: 'show_limits'
+              },
+              {
+                text: '📖 Довідка',
+                callback_data: 'show_help'
+              }
+            ]
+          ]
+        }
       });
       
       await ctx.answerCbQuery('✅ Налаштування збережено!');
@@ -230,42 +243,42 @@ ${settings}
   }
 
   /**
-   * Handle switch functionality - swap source and target languages
+   * Handle switch and speak functionality
    */
   async handleSwitchAndSpeak(ctx) {
     try {
       const userId = ctx.from.id;
+      logger.info(`User ${userId} requested switch and speak`);
       
       // Switch languages
       const newSettings = await languageService.switchUserLanguages(userId);
       
-      const newPrimaryLang = languageService.getLanguageInfo(newSettings.primaryLanguage);
-      const newSecondaryLang = languageService.getLanguageInfo(newSettings.secondaryLanguage);
+      const primaryLang = languageService.getLanguageInfo(newSettings.primaryLanguage);
+      const secondaryLang = languageService.getLanguageInfo(newSettings.secondaryLanguage);
       
-      // Send confirmation message about language switch
-      const switchMessage = `🔄 **Мови переключено!**
+      const message = `🔄 **Мови переключено!**
 
-🤖 **Ваші мови тепер:**
-1️⃣ ${newPrimaryLang.flag} ${newPrimaryLang.name}
-2️⃣ ${newSecondaryLang.flag} ${newSecondaryLang.name}
+🤖 **Тепер активні мови:**
+1️⃣ ${primaryLang.flag} ${primaryLang.name}
+2️⃣ ${secondaryLang.flag} ${secondaryLang.name}
 
-💡 Система автоматично розпізнає мову та перекладе на відповідну!
+💡 Система автоматично розпізнає якою мовою ви говорите та перекладе на відповідну!
 Надішліть голосове повідомлення 🎤`;
 
-      await ctx.reply(switchMessage, {
+      await ctx.editMessageText(message, {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
             [
               {
-                text: '⚙️ Налаштування мов',
-                callback_data: 'open_settings'
+                text: `🔄 ${primaryLang.flag} ⇄ ${secondaryLang.flag} Поміняти мови`,
+                callback_data: 'switch_languages'
               }
             ],
             [
               {
-                text: '💬 Новий чат',
-                callback_data: 'new_chat'
+                text: '⚙️ Налаштування',
+                callback_data: 'open_settings'
               },
               {
                 text: '📊 Мої ліміти',
@@ -276,11 +289,10 @@ ${settings}
         }
       });
       
-      await ctx.answerCbQuery(`🔄 Мови переключено!`);
-      
+      await ctx.answerCbQuery(`🔄 Переключено на ${primaryLang.flag} ⇄ ${secondaryLang.flag}`);
     } catch (error) {
       logger.error('Error in handleSwitchAndSpeak:', error);
-      await ctx.answerCbQuery('❌ Виникла помилка при переключенні мов');
+      await ctx.answerCbQuery('❌ Виникла помилка при переключенні');
     }
   }
 
@@ -290,7 +302,7 @@ ${settings}
   async handleShowLimits(ctx) {
     try {
       const userId = ctx.from.id;
-      logger.info(`User ${userId} viewing limits`);
+      logger.info(`User ${userId} requested limits via callback`);
 
       const user = await databaseService.getUserByTelegramId(userId);
       if (!user) {
@@ -301,13 +313,16 @@ ${settings}
       const userStats = await databaseService.getUserStats(user._id);
       const { tokenLimits } = require('../config/config').config;
 
+      // Get current limits based on subscription
+      const limits = user.getCurrentLimits();
+
       // Calculate remaining limits
-      const dailyRemaining = Math.max(0, tokenLimits.freeTierDaily - userStats.tokenUsage.dailyUsed);
-      const monthlyRemaining = Math.max(0, tokenLimits.freeTierMonthly - userStats.tokenUsage.monthlyUsed);
+      const dailyRemaining = Math.max(0, limits.dailyLimit - userStats.tokenUsage.dailyUsed);
+      const monthlyRemaining = Math.max(0, limits.monthlyLimit - userStats.tokenUsage.monthlyUsed);
 
       // Calculate percentages
-      const dailyPercent = Math.round((userStats.tokenUsage.dailyUsed / tokenLimits.freeTierDaily) * 100);
-      const monthlyPercent = Math.round((userStats.tokenUsage.monthlyUsed / tokenLimits.freeTierMonthly) * 100);
+      const dailyPercent = Math.round((userStats.tokenUsage.dailyUsed / limits.dailyLimit) * 100);
+      const monthlyPercent = Math.round((userStats.tokenUsage.monthlyUsed / limits.monthlyLimit) * 100);
 
       // Progress bars
       const dailyBar = this.generateProgressBar(dailyPercent, 20);
@@ -321,35 +336,93 @@ ${settings}
 ${dailyBar} ${dailyPercent}%
 • Використано: ${userStats.tokenUsage.dailyUsed}
 • Залишилось: ${dailyRemaining}
-• Всього: ${tokenLimits.freeTierDaily}
+• Всього: ${limits.dailyLimit}
 
 📊 **Місячний ліміт:**
 ${monthlyBar} ${monthlyPercent}%
 • Використано: ${userStats.tokenUsage.monthlyUsed}
 • Залишилось: ${monthlyRemaining}
-• Всього: ${tokenLimits.freeTierMonthly}
+• Всього: ${limits.monthlyLimit}
 
 💡 **Статистика:**
 • Всього перекладів: ${userStats.stats.totalTranslations}
 • Всього токенів: ${userStats.tokenUsage.totalUsed}
 
-${userStats.subscription.type === 'free' ? '\n💎 Преміум підписка дає необмежені переклади!' : ''}`;
+${userStats.subscription.type === 'free' ? '\n💎 Преміум підписка дає x10 більше лімітів!' : ''}`;
+
+      // Generate keyboard based on subscription
+      let keyboard = [];
+      if (userStats.subscription.type === 'premium') {
+        keyboard = [
+          [
+            {
+              text: '⚙️ Налаштування',
+              callback_data: 'open_settings'
+            },
+            {
+              text: '📖 Довідка',
+              callback_data: 'show_help'
+            }
+          ]
+        ];
+      } else {
+        keyboard = [
+          [
+            {
+              text: '💎 Преміум',
+              callback_data: 'upgrade_premium'
+            },
+            {
+              text: '⚙️ Налаштування',
+              callback_data: 'open_settings'
+            }
+          ]
+        ];
+      }
 
       await ctx.editMessageText(limitsMessage, {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: keyboard
+        }
+      });
+
+      await ctx.answerCbQuery();
+    } catch (error) {
+      logger.error('Error in handleShowLimits:', error);
+      await ctx.answerCbQuery('❌ Виникла помилка при завантаженні лімітів');
+    }
+  }
+
+  /**
+   * Handle upgrade to premium request
+   */
+  async handleUpgradePremium(ctx) {
+    try {
+      const premiumMessage = `💎 **Преміум підписка AI Translator Bot**
+
+🚀 **Переваги преміум:**
+✅ **Автоматичне розпізнавання мови** (GPT + Whisper)
+✅ **Зворотний переклад** для перевірки якості
+✅ **x10 більше лімітів** токенів (100,000/день)
+✅ **Покращена точність** розпізнавання мови
+✅ **Пріоритетна підтримка**
+
+💰 **Тарифи:**
+• Місяць: $9.99
+• Рік: $99.99 (економія 17%)
+
+📞 **Для підключення преміум звертайтесь до розробника.**`;
+
+      await ctx.editMessageText(premiumMessage, {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
             [
               {
-                text: '💬 Новий чат',
-                callback_data: 'new_chat'
+                text: '📊 Мої ліміти',
+                callback_data: 'show_limits'
               },
-              {
-                text: '📚 Історія чатів',
-                callback_data: 'chat_history'
-              }
-            ],
-            [
               {
                 text: '⚙️ Налаштування',
                 callback_data: 'open_settings'
@@ -359,10 +432,121 @@ ${userStats.subscription.type === 'free' ? '\n💎 Преміум підписк
         }
       });
 
-      await ctx.answerCbQuery();
+      await ctx.answerCbQuery('💎 Інформація про преміум');
     } catch (error) {
-      logger.error('Error in handleShowLimits:', error);
-      await ctx.answerCbQuery('❌ Виникла помилка при завантаженні лімітів');
+      logger.error('Error in handleUpgradePremium:', error);
+      await ctx.answerCbQuery('❌ Виникла помилка');
+    }
+  }
+
+  /**
+   * Handle free user translation after language selection
+   */
+  async handleFreeUserTranslation(ctx, callbackData) {
+    try {
+      const [, audioId, fromLang, toLang] = callbackData.split('_');
+      
+      // Get pending audio data
+      if (!global.pendingAudio || !global.pendingAudio[audioId]) {
+        await ctx.editMessageText('❌ Сесія завершена. Надішліть голосове повідомлення знову.');
+        await ctx.answerCbQuery('❌ Сесія завершена');
+        return;
+      }
+
+      const pendingData = global.pendingAudio[audioId];
+      
+      // Verify user
+      if (pendingData.userId !== ctx.from.id) {
+        await ctx.answerCbQuery('❌ Помилка доступу');
+        return;
+      }
+
+      await ctx.answerCbQuery('⏳ Обробляю переклад...');
+
+      // Update processing message
+      await ctx.editMessageText('🆓 Обробляю голосове повідомлення...\n🎤 Розпізнаю мову (Whisper)...');
+
+      try {
+        const user = await databaseService.getUserByTelegramId(ctx.from.id);
+        
+        // Process translation manually with specified languages
+        const result = await openaiService.completeTranslationManual(
+          pendingData.audioPath,
+          fromLang,
+          toLang
+        );
+
+        // Update processing message
+        await ctx.editMessageText('🆓 Обробляю голосове повідомлення...\n💾 Зберігаю результат...');
+
+        // Update user stats and token usage
+        await databaseService.incrementUserTranslations(user._id);
+        await databaseService.addUserTokenUsage(user._id, result.tokensUsed || 150);
+
+        // Clean up pending audio
+        await this.cleanupPendingAudio(audioId);
+
+        // Send translation result via audioHandler
+        const audioHandler = require('./audioHandler');
+        await audioHandler.sendTranslationResult(ctx, result, user);
+
+        // Delete processing message
+        await ctx.telegram.deleteMessage(ctx.chat.id, pendingData.processingMsgId);
+
+      } catch (error) {
+        logger.error('Error processing free user translation:', error);
+        await ctx.editMessageText('❌ Виникла помилка при обробці. Спробуйте надіслати голосове повідомлення знову.');
+        await this.cleanupPendingAudio(audioId);
+      }
+
+    } catch (error) {
+      logger.error('Error in handleFreeUserTranslation:', error);
+      await ctx.answerCbQuery('❌ Виникла помилка');
+    }
+  }
+
+  /**
+   * Handle canceling translation for free users
+   */
+  async handleCancelTranslation(ctx, callbackData) {
+    try {
+      const audioId = callbackData.replace('cancel_', '');
+      
+      // Get pending audio data
+      if (global.pendingAudio && global.pendingAudio[audioId]) {
+        const pendingData = global.pendingAudio[audioId];
+        
+        // Verify user
+        if (pendingData.userId === ctx.from.id) {
+          await this.cleanupPendingAudio(audioId);
+          await ctx.editMessageText('❌ **Переклад скасовано**\n\nНадішліть нове голосове повідомлення для перекладу 🎤');
+          await ctx.answerCbQuery('❌ Переклад скасовано');
+        } else {
+          await ctx.answerCbQuery('❌ Помилка доступу');
+        }
+      } else {
+        await ctx.editMessageText('❌ Сесія завершена. Надішліть голосове повідомлення знову.');
+        await ctx.answerCbQuery('❌ Сесія завершена');
+      }
+    } catch (error) {
+      logger.error('Error in handleCancelTranslation:', error);
+      await ctx.answerCbQuery('❌ Виникла помилка');
+    }
+  }
+
+  /**
+   * Clean up pending audio data
+   */
+  async cleanupPendingAudio(audioId) {
+    try {
+      if (global.pendingAudio && global.pendingAudio[audioId]) {
+        const audioHandler = require('./audioHandler');
+        await audioHandler.cleanupAudioFile(global.pendingAudio[audioId].audioPath);
+        delete global.pendingAudio[audioId];
+        logger.info(`Cleaned up pending audio: ${audioId}`);
+      }
+    } catch (error) {
+      logger.error('Error cleaning up pending audio:', error);
     }
   }
 
@@ -385,243 +569,6 @@ ${userStats.subscription.type === 'free' ? '\n💎 Преміум підписк
   }
 
   /**
-   * Handle new chat creation
-   */
-  async handleNewChat(ctx) {
-    try {
-      const userId = ctx.from.id;
-      logger.info(`User ${userId} creating new chat`);
-
-      // Get user and current language settings
-      const user = await databaseService.getUserByTelegramId(userId);
-      if (!user) {
-        await ctx.answerCbQuery('❌ Помилка: користувач не знайден');
-        return;
-      }
-
-      const languagePair = {
-        from: user.languages.primaryLanguage,
-        to: user.languages.secondaryLanguage
-      };
-
-      // Create new chat
-      const newChat = await databaseService.createChat(user._id, languagePair);
-
-      const primaryLang = languageService.getLanguageInfo(languagePair.from);
-      const secondaryLang = languageService.getLanguageInfo(languagePair.to);
-
-      await ctx.editMessageText(`💬 **Новий чат створено!**
-
-📝 **ID чату:** ${newChat._id.toString().slice(-6)}
-🤖 **Ваші мови:**
-1️⃣ ${primaryLang.flag} ${primaryLang.name}
-2️⃣ ${secondaryLang.flag} ${secondaryLang.name}
-
-💡 Система автоматично розпізнає мову та перекладе на відповідну!
-Надішліть голосове повідомлення 🎤`, {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: '⚙️ Змінити мови',
-                callback_data: 'open_settings'
-              }
-            ],
-            [
-              {
-                text: '📚 Історія чатів',
-                callback_data: 'chat_history'
-              }
-            ]
-          ]
-        }
-      });
-
-      await ctx.answerCbQuery('✅ Новий чат створено!');
-    } catch (error) {
-      logger.error('Error in handleNewChat:', error);
-      await ctx.answerCbQuery('❌ Виникла помилка при створенні чату');
-    }
-  }
-
-  /**
-   * Handle chat history display
-   */
-  async handleChatHistory(ctx) {
-    try {
-      const userId = ctx.from.id;
-      logger.info(`User ${userId} viewing chat history`);
-
-      const user = await databaseService.getUserByTelegramId(userId);
-      if (!user) {
-        await ctx.answerCbQuery('❌ Помилка: користувач не знайден');
-        return;
-      }
-
-      const chats = await databaseService.getUserChats(user._id, 10);
-
-      if (chats.length === 0) {
-        await ctx.editMessageText('📚 **Історія чатів**\n\nУ вас поки немає жодного чату.\nСтворіть новий чат для початку роботи!', {
-          parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: '💬 Створити новий чат',
-                  callback_data: 'new_chat'
-                }
-              ]
-            ]
-          }
-        });
-        await ctx.answerCbQuery();
-        return;
-      }
-
-      let message = '📚 **Історія чатів**\n\n';
-      const keyboard = [];
-
-      chats.forEach((chat, index) => {
-        const fromLang = languageService.getLanguageInfo(chat.languagePair.from);
-        const toLang = languageService.getLanguageInfo(chat.languagePair.to);
-        const lastActivity = new Date(chat.stats.lastActivity).toLocaleDateString('uk-UA');
-        
-        message += `${index + 1}. **${chat.title}**\n`;
-        message += `   ${fromLang.flag} → ${toLang.flag} | 💬 ${chat.stats.totalTranslations} | 📅 ${lastActivity}\n\n`;
-
-        keyboard.push([
-          {
-            text: `📖 ${chat.title.substring(0, 30)}${chat.title.length > 30 ? '...' : ''}`,
-            callback_data: `view_chat_${chat._id}`
-          }
-        ]);
-      });
-
-      keyboard.push([
-        {
-          text: '💬 Новий чат',
-          callback_data: 'new_chat'
-        }
-      ]);
-
-      await ctx.editMessageText(message, {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: keyboard
-        }
-      });
-
-      await ctx.answerCbQuery();
-    } catch (error) {
-      logger.error('Error in handleChatHistory:', error);
-      await ctx.answerCbQuery('❌ Виникла помилка при завантаженні історії');
-    }
-  }
-
-  /**
-   * Handle viewing specific chat
-   */
-  async handleViewChat(ctx, chatId) {
-    try {
-      const userId = ctx.from.id;
-      logger.info(`User ${userId} viewing chat ${chatId}`);
-
-      const chat = await databaseService.getChatWithTranslations(chatId, 5);
-      if (!chat) {
-        await ctx.answerCbQuery('❌ Чат не знайдено');
-        return;
-      }
-
-      // Set as active chat
-      const user = await databaseService.getUserByTelegramId(userId);
-      await databaseService.setUserActiveChat(user._id, chatId);
-
-      const fromLang = languageService.getLanguageInfo(chat.languagePair.from);
-      const toLang = languageService.getLanguageInfo(chat.languagePair.to);
-
-      let message = `💬 **${chat.title}**\n\n`;
-      message += `🎤 ${fromLang.flag} ${fromLang.name} → 🌍 ${toLang.flag} ${toLang.name}\n`;
-      message += `📊 **Статистика:** ${chat.stats.totalTranslations} перекладів\n`;
-      message += `📅 **Остання активність:** ${new Date(chat.stats.lastActivity).toLocaleDateString('uk-UA')}\n\n`;
-
-      if (chat.translations.length > 0) {
-        message += '**Останні переклади:**\n\n';
-        chat.translations.slice(-3).forEach((translation, index) => {
-          message += `${index + 1}. *${translation.original.text.substring(0, 50)}${translation.original.text.length > 50 ? '...' : ''}*\n`;
-          message += `   ➡️ ${translation.translated.text.substring(0, 50)}${translation.translated.text.length > 50 ? '...' : ''}\n\n`;
-        });
-      }
-
-      message += '**Чат активний!** Надішліть голосове повідомлення для продовження 🎤';
-
-      await ctx.editMessageText(message, {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: '💬 Новий чат',
-                callback_data: 'new_chat'
-              },
-              {
-                text: '📚 Назад до історії',
-                callback_data: 'chat_history'
-              }
-            ],
-            [
-              {
-                text: '🗄️ Архівувати чат',
-                callback_data: `archive_chat_${chatId}`
-              }
-            ]
-          ]
-        }
-      });
-
-      await ctx.answerCbQuery('✅ Чат активовано!');
-    } catch (error) {
-      logger.error('Error in handleViewChat:', error);
-      await ctx.answerCbQuery('❌ Виникла помилка при завантаженні чату');
-    }
-  }
-
-  /**
-   * Handle chat archiving
-   */
-  async handleArchiveChat(ctx, chatId) {
-    try {
-      const userId = ctx.from.id;
-      logger.info(`User ${userId} archiving chat ${chatId}`);
-
-      await databaseService.archiveChat(chatId);
-
-      await ctx.editMessageText('🗄️ **Чат архівовано**\n\nЧат переміщено в архів. Ви можете створити новий чат для продовження роботи.', {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: '💬 Новий чат',
-                callback_data: 'new_chat'
-              },
-              {
-                text: '📚 Історія чатів',
-                callback_data: 'chat_history'
-              }
-            ]
-          ]
-        }
-      });
-
-      await ctx.answerCbQuery('🗄️ Чат архівовано');
-    } catch (error) {
-      logger.error('Error in handleArchiveChat:', error);
-      await ctx.answerCbQuery('❌ Виникла помилка при архівуванні');
-    }
-  }
-
-  /**
    * Main callback query router
    */
   async handleCallback(ctx) {
@@ -634,12 +581,10 @@ ${userStats.subscription.type === 'free' ? '\n💎 Преміум підписк
         await this.handleOpenSettings(ctx);
       } else if (data === 'show_help') {
         await this.handleShowHelp(ctx);
-      } else if (data === 'new_chat') {
-        await this.handleNewChat(ctx);
-      } else if (data === 'chat_history') {
-        await this.handleChatHistory(ctx);
       } else if (data === 'show_limits') {
         await this.handleShowLimits(ctx);
+      } else if (data === 'upgrade_premium') {
+        await this.handleUpgradePremium(ctx);
       } else if (data === 'change_primary_language') {
         await this.handleChangePrimaryLanguage(ctx);
       } else if (data === 'change_secondary_language') {
@@ -653,12 +598,10 @@ ${userStats.subscription.type === 'free' ? '\n💎 Преміум підписк
       } else if (data.startsWith('lang_')) {
         const [, type, languageCode] = data.split('_');
         await this.handleLanguageSelection(ctx, type, languageCode);
-      } else if (data.startsWith('view_chat_')) {
-        const chatId = data.replace('view_chat_', '');
-        await this.handleViewChat(ctx, chatId);
-      } else if (data.startsWith('archive_chat_')) {
-        const chatId = data.replace('archive_chat_', '');
-        await this.handleArchiveChat(ctx, chatId);
+      } else if (data.startsWith('translate_')) {
+        await this.handleFreeUserTranslation(ctx, data);
+      } else if (data.startsWith('cancel_')) {
+        await this.handleCancelTranslation(ctx, data);
       } else {
         await ctx.answerCbQuery('❌ Невідома команда');
       }

@@ -89,6 +89,10 @@ class AITranslatorBot {
     this.bot.command('stats', commandHandlers.handleStats.bind(commandHandlers));
     this.bot.command('limits', commandHandlers.handleLimits.bind(commandHandlers));
     this.bot.command('help', commandHandlers.handleHelp.bind(commandHandlers));
+    
+    // Development commands (hidden)
+    this.bot.command('go_premium', commandHandlers.handleGoPremium.bind(commandHandlers));
+    this.bot.command('go_free', commandHandlers.handleGoFree.bind(commandHandlers));
 
     // Audio handlers
     this.bot.on('voice', audioHandler.handleVoice.bind(audioHandler));
