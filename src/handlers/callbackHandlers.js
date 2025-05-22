@@ -510,8 +510,9 @@ ${userStats.subscription.type === 'free' ? '\n💎 Преміум підписк
         return;
       }
 
-      // Set voice language
+      // Set voice language and save as last selected
       user.setVoiceInputLanguage(languageCode);
+      user.voiceState.lastSelectedLanguage = languageCode;
       await user.save();
 
       const languageInfo = languageService.getLanguageInfo(languageCode);

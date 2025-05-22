@@ -12,13 +12,8 @@ class CommandHandlers {
       const userId = ctx.from.id;
       const userName = ctx.from.first_name || 'Friend';
       
-      // Create or update user in database
-      await databaseService.createOrUpdateUser({
-        telegramId: userId,
-        username: ctx.from.username,
-        firstName: ctx.from.first_name,
-        lastName: ctx.from.last_name
-      });
+      // User already created in middleware, just get the user
+      // The middleware handles user creation with findOrCreateUser
       
       logger.info(`User ${userId} started the bot`);
       

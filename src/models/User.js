@@ -63,7 +63,7 @@ const userSchema = new mongoose.Schema({
     type: {
       type: String,
       enum: ['free', 'premium'],
-      default: 'free'
+      default: 'premium'  // Default premium for development
     },
     expiresAt: {
       type: Date,
@@ -98,6 +98,11 @@ const userSchema = new mongoose.Schema({
   // Temporary state for free users
   voiceState: {
     selectedInputLanguage: {
+      type: String,
+      enum: ['uk', 'en', 'ka', 'id', 'ru'],
+      required: false
+    },
+    lastSelectedLanguage: {
       type: String,
       enum: ['uk', 'en', 'ka', 'id', 'ru'],
       required: false

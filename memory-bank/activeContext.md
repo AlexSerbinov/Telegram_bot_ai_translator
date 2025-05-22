@@ -1,109 +1,139 @@
 # Active Context
 
-## Current Work Focus
+## Current Work Focus - URGENT ISSUES TO FIX
 
-### Just Completed (Phase 3 Premium System)
-✅ **Premium vs Free User Differentiation**
-- Implemented two-tier system with different capabilities
-- Premium users: Automatic language detection (GPT + Whisper)
-- Free users: Manual language selection via buttons
+### 🚨 Critical Issues Found (From User Testing)
 
-✅ **Hidden Dev Commands**
-- `/go_premium` - switches user to premium status
-- `/go_free` - switches user to free status
-- Commands are not documented publicly (dev-only)
+#### 1. /start Command Fails for New Users - ✅ FIXED
+- **Проблема**: При запуску з нового Telegram аккаунта видає помилку "Виникла помилка при запуску. Спробуйте ще раз"
+- **Причина**: Невідповідність між middleware (використовує `findOrCreateUser`) та commandHandler (використовує `createOrUpdateUser` якої не існує)
+- **Локація**: `src/bot.js:45` vs `src/handlers/commandHandlers.js:14`
+- **Статус**: ✅ ВИПРАВЛЕНО - прибрав дублювання створення користувача
 
-✅ **User Experience Optimization**
-- Removed chat functionality completely (buttons and handlers)
-- Simplified button layout for better UX
-- Different processing flows for Premium vs Free users
+#### 2. Duplicate Language Selection Messages - ✅ FIXED
+- **Проблема**: При відправці голосового повідомлення free користувачем показується двічі повідомлення про вибір мови
+- **Причина**: В `audioHandler.js:150` є setTimeout що викликає `showLanguageSelectionForFreeUser` після обновлення processing message
+- **Локація**: `src/handlers/audioHandler.js:145-152`
+- **Статус**: ✅ ВИПРАВЛЕНО - видалив setTimeout та показую кнопки в одному повідомленні
 
-✅ **Technical Improvements**
-- Updated GPT model to gpt-4o-mini-transcribe for better performance
-- Implemented pending audio system for Free users
-- Enhanced error handling and cleanup
+### 🎯 New Requirements from User
 
-## Current State
+#### 4. Remember Last Selected Language for Free Users - ✅ DONE
+- **Завдання**: Якщо користувач диктував українською, наступного разу за замовчуванням має бути українська
+- **Логіка**: Зберігати останню вибрану мову і використовувати як дефолт
+- **Локація**: User model + audioHandler.js
+- **Статус**: ✅ ВИКОНАНО
 
-### Working Features
-- ✅ Telegram bot startup and basic commands
-- ✅ Premium/Free user differentiation 
-- ✅ Voice message processing for both user types
-- ✅ Language settings and switching
-- ✅ OpenAI integration (Whisper + GPT)
-- ✅ MongoDB user management
-- ✅ Token usage tracking and limits
-- ✅ Docker deployment setup
+#### 5. Remove Language Analysis for Free Users - ✅ DONE
+- **Завдання**: Для безкоштовної версії не показувати "Аналіз мови" і не робити аналіз мови
+- **Логіка**: Просто використовувати обрану мову без детекції
+- **Локація**: audioHandler.js + processing messages
+- **Статус**: ✅ ВИКОНАНО
 
-### Known Issues
-- ⚠️ Bot conflict error (409) when multiple instances try to start
-- ⚠️ MongoDB deprecated options warnings (useNewUrlParser, useUnifiedTopology)
-- ⚠️ Need to kill existing processes before restart
+#### 6. Simplify Translation Response Format - ✅ DONE
+- **Завдання**: Спростити формат відповіді перекладу
+- **Поточний формат**: Складний з багатьма деталями (зворотний переклад, статистика, преміум функції)
+- **Новий формат**: 
+  ```
+  🇬🇪 **გამარჯობა, როგორ ხარ?**
+  
+  🗣️ Оригінал (🇬🇧): Hello, how are you?
+  ```
+- **Вимоги**: Використовувати Telegram markdown (**жирний текст**)
+- **Локація**: `src/handlers/audioHandler.js:sendTranslationResult()`
+- **Статус**: ✅ ВИКОНАНО
 
-### Current Challenge
-**Bot Instance Management**: The bot sometimes fails to start due to existing instance conflicts. Need to implement better process management or use process managers like PM2.
+#### 7. Default Premium Access for Development - ✅ DONE
+- **Завдання**: Зробити всіх нових користувачів Premium за замовчуванням
+- **Мета**: Спростити тестування під час розробки
+- **Локація**: User model default subscription
+- **Зміна**: `default: 'free'` → `default: 'premium'`
+- **Статус**: ✅ ВИКОНАНО
 
-## Recent Changes (Latest Session)
+#### 8. UX Design Needs Simplification - IN PROGRESS
+- **Проблема**: Поточний дизайн занадто складний для користувачів
+- **Потреба**: Повний аналіз UX та спрощення всіх потоків
+- **Статус**: ВИСОКИЙ ПРІОРИТЕТ - почали з спрощення формату відповідей
 
-### 1. Dev Commands Implementation
-- Added hidden `/go_premium` and `/go_free` commands
-- Commands registered in bot.js and implemented in commandHandlers.js
-- No public documentation (development use only)
+### Immediate Action Plan
 
-### 2. Chat Functionality Removal
-- Deleted all chat-related buttons from UI
-- Removed handlers for "Новий чат" and "Історія чатів"
-- Simplified menu structures across all commands
+#### ✅ COMPLETED TASKS:
+1. **Fixed /start command** - removed user creation duplication
+2. **Fixed duplicate language selection** - removed setTimeout delay
+3. **Added language memory** - users' last selected language remembered
+4. **Simplified translation format** - clean response with just translation + original
+5. **Set Premium default** - all new users get premium access for development
 
-### 3. Free User Experience Redesign
-- Free users no longer get automatic language detection
-- Instead, they see language selection buttons after voice upload
-- Audio files stored temporarily until user makes selection
-- Implements callback system for delayed processing
+#### Priority 1: UX Simplification Analysis (ONGOING)
+1. ✅ Completed: Language memory, removed analysis for free users, simplified response format
+2. 📍 Current: Testing simplified translation responses
+3. Next: Review complete user journey (start → settings → translation)
+4. Design completely simplified, intuitive flows
 
-### 4. Technical Updates
-- Changed GPT model from gpt-4.1-nano to gpt-4o-mini-transcribe
-- Enhanced callbackHandlers.js with new free user workflow
-- Improved error handling in audio processing
+#### Priority 2: Testing & Validation
+1. Test new simple translation format with various languages
+2. Verify Premium features work for all new users
+3. Test /start command works without errors
+4. Validate language memory functionality
 
-## Next Steps (Immediate)
+## Technical Debt Identified
 
-### Priority 1: Process Management
-- Investigate bot instance conflicts
-- Consider implementing PM2 or similar process manager
-- Add better startup checks and cleanup
+### Database Service Inconsistency
+- `bot.js` middleware calls `databaseService.findOrCreateUser()`
+- `commandHandlers.js` calls `databaseService.createOrUpdateUser()` (doesn't exist)
+- Need to standardize on one method
 
-### Priority 2: Testing & Validation
-- Test dev commands functionality
-- Validate Free vs Premium user experiences
-- Test language detection accuracy with new model
+### Audio Handler Complexity
+- Free user flow has unnecessary complexity with setTimeout
+- Processing messages updated multiple times creating confusion  
+- Voice state management is overly complicated
 
-### Priority 3: UI/UX Polish
-- Verify button layouts are intuitive
-- Test edge cases in user flows
-- Optimize response messages
+### Error Handling Gaps
+- /start command doesn't gracefully handle user creation failures
+- Generic error messages don't help users understand issues
 
-## Decisions Made
+## Current State Assessment
 
-### User Experience Strategy
-- **Premium Focus**: Automatic detection with verification for paying users
-- **Free Limitations**: Manual selection to encourage premium upgrades
-- **Clean Interface**: Removed complex chat features for simplicity
+### Working Features (Verified)
+- ✅ Premium user automatic language detection
+- ✅ Token usage tracking
+- ✅ Dev commands (/go_premium, /go_free)
+- ✅ MongoDB connection and user storage
 
-### Technical Architecture
-- **Stateless Design**: Minimal session storage except pending audio
-- **Clear Separation**: Different code paths for Premium vs Free
-- **Memory Management**: Temporary audio cleanup after processing
+### Broken Features (Critical)
+- ❌ /start command for new users  
+- ❌ Free user voice message workflow
+- ❌ Clean UX experience
 
-### Development Approach
-- **Hidden Features**: Dev commands for testing without user confusion
-- **Incremental Testing**: Phase-by-phase feature validation
-- **Documentation First**: Memory bank for knowledge preservation
+### Testing Needed
+- [ ] End-to-end testing with fresh user accounts
+- [ ] Free vs Premium user journey validation  
+- [ ] Error scenarios and edge cases
+- [ ] Mobile UX testing in Telegram
+
+## Next Session Goals
+
+1. **FIX CRITICAL BUGS**: Resolve /start and duplicate message issues
+2. **UX ANALYSIS**: Complete user experience audit  
+3. **SIMPLIFICATION DESIGN**: Create product concept for simple UX
+4. **TESTING**: Validate all user flows work correctly
+
+## Product Vision for Simple UX
+
+### Core Principle
+"Одна кнопка - один результат" - Every user action should be simple and predictable
+
+### Key Simplifications Needed
+1. **Onboarding**: /start should immediately work and guide user
+2. **Language Setup**: Intuitive language pair selection  
+3. **Voice Translation**: Clear workflow regardless of subscription
+4. **Error Messages**: Helpful, actionable error guidance
+
+### Success Criteria for Simplified UX
+- New user can complete first translation in <30 seconds
+- Zero duplicate or confusing messages
+- Clear subscription tier differences without complexity
+- Intuitive button layouts and messaging
 
 ## Context for Next Session
-When resuming work, remember:
-1. Bot may need process cleanup before starting
-2. Premium/Free logic is fully implemented but needs testing
-3. Memory bank system is now initialized
-4. All chat functionality has been removed
-5. Focus should be on validation and polish rather than new features
+Remember: User reported critical bugs blocking basic functionality. Focus on fixing these before any new features. All issues are documented above with specific file locations.

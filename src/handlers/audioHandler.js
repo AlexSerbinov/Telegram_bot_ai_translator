@@ -101,11 +101,11 @@ class AudioHandler {
               ctx.chat.id, 
               processingMsg.message_id, 
               null, 
-              `🆓 Обробляю голосове повідомлення...\n🎤 Розпізнаю мову (${languageService.getLanguageInfo(inputLang).name})...`
+              `🆓 Обробляю голосове повідомлення...\n🔄 Перекладаю з ${languageService.getLanguageInfo(inputLang).name}...`
             );
 
             try {
-              // Process translation with known language
+              // Process translation with known language (no language detection for free users)
               const result = await openaiService.completeTranslationManual(
                 audioPath,
                 inputLang,
@@ -146,25 +146,75 @@ class AudioHandler {
               await user.save();
             }
           } else {
-            // User needs to select language first
-            await ctx.telegram.editMessageText(
-              ctx.chat.id,
-              processingMsg.message_id,
-              null,
-              `🆓 **Спочатку оберіть мову для диктування**
+            // Check if user has a last selected language
+            if (user.voiceState.lastSelectedLanguage) {
+              // Use last selected language automatically
+              const inputLang = user.voiceState.lastSelectedLanguage;
+              const outputLang = inputLang === userSettings.primaryLanguage ? 
+                userSettings.secondaryLanguage : userSettings.primaryLanguage;
+
+              await ctx.telegram.editMessageText(
+                ctx.chat.id, 
+                processingMsg.message_id, 
+                null, 
+                `🆓 Обробляю голосове повідомлення...\n🔄 Перекладаю з ${languageService.getLanguageInfo(inputLang).name}...`
+              );
+
+              try {
+                // Process translation with last selected language
+                const result = await openaiService.completeTranslationManual(
+                  audioPath,
+                  inputLang,
+                  outputLang
+                );
+
+                // Update processing message
+                await ctx.telegram.editMessageText(
+                  ctx.chat.id, 
+                  processingMsg.message_id, 
+                  null, 
+                  '🆓 Обробляю голосове повідомлення...\n💾 Зберігаю результат...'
+                );
+
+                // Update user stats and token usage
+                await databaseService.incrementUserTranslations(user._id);
+                await databaseService.addUserTokenUsage(user._id, result.tokensUsed || 150);
+
+                // Format and send result
+                await this.sendTranslationResult(ctx, result, user);
+                
+                // Delete processing message
+                await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id);
+
+              } catch (error) {
+                logger.error('Error processing free user translation with remembered language:', error);
+                await ctx.telegram.editMessageText(
+                  ctx.chat.id,
+                  processingMsg.message_id,
+                  null,
+                  '❌ Виникла помилка при обробці. Спробуйте ще раз.'
+                );
+              }
+            } else {
+              // User needs to select language first - show selection directly
+              await ctx.telegram.editMessageText(
+                ctx.chat.id,
+                processingMsg.message_id,
+                null,
+                `🆓 **Спочатку оберіть мову для диктування**
 
 ❗ Для безкоштовної версії потрібно спочатку вибрати мову, а потім диктувати.
 
-Використовуйте кнопку "🎯 Обрати мову" нижче:`
-            );
+🎤 Якою мовою ви будете говорити?`,
+                {
+                  parse_mode: 'Markdown',
+                  reply_markup: await this.getLanguageSelectionKeyboard(user)
+                }
+              );
 
-            // Clean up the audio file since we can't process it now
-            await this.cleanupAudioFile(audioPath);
-
-            // Show language selection buttons
-            setTimeout(async () => {
-              await this.showLanguageSelectionForFreeUser(ctx, user);
-            }, 2000);
+              // Clean up the audio file since we can't process it now
+              await this.cleanupAudioFile(audioPath);
+            }
           }
         }
 
@@ -232,113 +282,30 @@ class AudioHandler {
     try {
       const detectedLang = languageService.getLanguageInfo(result.detectedLanguage);
       const targetLang = languageService.getLanguageInfo(result.targetLanguage);
-      const primaryLang = languageService.getLanguageInfo(user.languages.primaryLanguage);
-      const secondaryLang = languageService.getLanguageInfo(user.languages.secondaryLanguage);
       
-      // Build main translation message
-      let message = `🌍 **${targetLang.flag} ПЕРЕКЛАД:**
-**${result.translated}**
+      // Simple format: just translation and original
+      const message = `${targetLang.flag} **${result.translated}**
 
-🎤 *Розпізнано* (${detectedLang.flag} ${detectedLang.name}):
-${result.original}`;
+🗣️ Оригінал (${detectedLang.flag}): ${result.original}`;
 
-      // Add back-translation for Premium users only
-      if (result.isPremium && result.backTranslation) {
-        message += `\n\n🔄 *Зворотній переклад* (${detectedLang.flag} ${detectedLang.name}):
-${result.backTranslation}`;
-      }
-
-      // Add language detection info based on user type
-      let detectionInfo = '';
-      if (result.isPremium && result.whisperDetection && result.gptDetection) {
-        const whisperLang = languageService.getLanguageInfo(result.whisperDetection);
-        const gptLang = languageService.getLanguageInfo(result.gptDetection);
-        
-        if (result.whisperDetection === result.gptDetected) {
-          detectionInfo = `\n🔍 *Розпізнавання:* 👑 Whisper + GPT погодились: ${detectedLang.flag} ${detectedLang.name}`;
-        } else {
-          detectionInfo = `\n🔍 *Розпізнавання:* 👑 Whisper: ${whisperLang.flag} ${whisperLang.name}, GPT: ${gptLang.flag} ${gptLang.name} → ${detectedLang.flag} ${detectedLang.name}`;
-        }
-      } else if (!result.isPremium) {
-        detectionInfo = `\n🔍 *Розпізнавання:* 🆓 Базове (тільки Whisper)`;
-      }
-
-      // Add user info and statistics
-      message += `\n\n🤖 *Ваші мови:* ${primaryLang.flag} ${primaryLang.name} ⇄ ${secondaryLang.flag} ${secondaryLang.name}
-📊 *Всього перекладів:* ${user.stats.totalTranslations + 1}${detectionInfo}`;
-
-      // Add subscription info and features
-      if (result.isPremium) {
-        message += `\n\n👑 **ПРЕМІУМ ФУНКЦІЇ:**
-✅ Автоматичне розпізнавання мови (GPT + Whisper)
-✅ Зворотній переклад для перевірки
-✅ x10 більше лімітів токенів`;
-      } else {
-        message += `\n\n🆓 **БЕЗКОШТОВНА ВЕРСІЯ**
-💡 Преміум функції недоступні:
-• Автоматичне розпізнавання мови
-• Зворотній переклад
-• Збільшені ліміти`;
-      }
-
-      // Build different keyboards for Premium and Free users
-      let keyboard;
-      if (result.isPremium) {
-        // Premium users get language switching and limits
-        keyboard = {
-          inline_keyboard: [
-            [
-              {
-                text: `🔄 ${primaryLang.flag} ⇄ ${secondaryLang.flag} Поміняти мови`,
-                callback_data: 'switch_languages'
-              }
-            ],
-            [
-              {
-                text: '📊 Мої ліміти',
-                callback_data: 'show_limits'
-              },
-              {
-                text: '⚙️ Налаштування',
-                callback_data: 'open_settings'
-              }
-            ]
+      // Simple keyboard - just settings
+      const keyboard = {
+        inline_keyboard: [
+          [
+            {
+              text: '⚙️ Налаштування',
+              callback_data: 'open_settings'
+            }
           ]
-        };
-      } else {
-        // Free users get dictation buttons for next translation
-        keyboard = {
-          inline_keyboard: [
-            [
-              {
-                text: `🎤 Диктувати ${primaryLang.flag}`,
-                callback_data: `set_voice_lang_${user.languages.primaryLanguage}`
-              },
-              {
-                text: `🎤 Диктувати ${secondaryLang.flag}`,
-                callback_data: `set_voice_lang_${user.languages.secondaryLanguage}`
-              }
-            ],
-            [
-              {
-                text: '📊 Мої ліміти',
-                callback_data: 'show_limits'
-              },
-              {
-                text: '💎 Преміум',
-                callback_data: 'upgrade_premium'
-              }
-            ]
-          ]
-        };
-      }
+        ]
+      };
 
       await ctx.reply(message, {
         parse_mode: 'Markdown',
         reply_markup: keyboard
       });
 
-      logger.info(`${result.isPremium ? 'Premium' : 'Free'} translation sent for user ${ctx.from.id}`);
+      logger.info(`Simple translation sent for user ${ctx.from.id}`);
     } catch (error) {
       logger.error('Error sending translation result:', error);
       throw error;
@@ -377,7 +344,51 @@ ${result.backTranslation}`;
   }
 
   /**
-   * Show language selection for free users
+   * Get language selection keyboard for free users
+   */
+  async getLanguageSelectionKeyboard(user) {
+    const userSettings = user.languages;
+    const primaryLang = languageService.getLanguageInfo(userSettings.primaryLanguage);
+    const secondaryLang = languageService.getLanguageInfo(userSettings.secondaryLanguage);
+    
+    // Check if user has a last selected language to highlight it
+    const lastSelected = user.voiceState.lastSelectedLanguage;
+    
+    // Build buttons with last selected indicated
+    const primaryText = lastSelected === userSettings.primaryLanguage ? 
+      `✅ ${primaryLang.flag} Диктувати ${primaryLang.name} (останній раз)` :
+      `${primaryLang.flag} Диктувати ${primaryLang.name}`;
+      
+    const secondaryText = lastSelected === userSettings.secondaryLanguage ? 
+      `✅ ${secondaryLang.flag} Диктувати ${secondaryLang.name} (останній раз)` :
+      `${secondaryLang.flag} Диктувати ${secondaryLang.name}`;
+
+    return {
+      inline_keyboard: [
+        [
+          {
+            text: primaryText,
+            callback_data: `set_voice_lang_${userSettings.primaryLanguage}`
+          }
+        ],
+        [
+          {
+            text: secondaryText,
+            callback_data: `set_voice_lang_${userSettings.secondaryLanguage}`
+          }
+        ],
+        [
+          {
+            text: '⚙️ Налаштування мов',
+            callback_data: 'open_settings'
+          }
+        ]
+      ]
+    };
+  }
+
+  /**
+   * Show language selection for free users (DEPRECATED - use getLanguageSelectionKeyboard)
    */
   async showLanguageSelectionForFreeUser(ctx, user) {
     try {
@@ -393,28 +404,7 @@ ${result.backTranslation}`;
 
       await ctx.reply(message, {
         parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: `${primaryLang.flag} Диктувати ${primaryLang.name}`,
-                callback_data: `set_voice_lang_${userSettings.primaryLanguage}`
-              }
-            ],
-            [
-              {
-                text: `${secondaryLang.flag} Диктувати ${secondaryLang.name}`,
-                callback_data: `set_voice_lang_${userSettings.secondaryLanguage}`
-              }
-            ],
-            [
-              {
-                text: '⚙️ Налаштування мов',
-                callback_data: 'open_settings'
-              }
-            ]
-          ]
-        }
+        reply_markup: await this.getLanguageSelectionKeyboard(user)
       });
     } catch (error) {
       logger.error('Error showing language selection for free user:', error);
