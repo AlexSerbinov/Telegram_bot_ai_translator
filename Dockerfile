@@ -12,16 +12,7 @@ RUN npm ci --only=production
 # Copy source code
 COPY src/ ./src/
 
-# Create temp directory
-RUN mkdir -p temp/audio
-
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S botuser -u 1001
-
-# Change ownership of the app directory
-RUN chown -R botuser:nodejs /app
-USER botuser
+# Note: Running as root for simplicity with volume mounts
 
 # Expose port (optional, for health checks)
 EXPOSE 3000

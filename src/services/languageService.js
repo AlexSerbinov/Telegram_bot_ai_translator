@@ -48,13 +48,13 @@ class LanguageService {
       const user = await databaseService.getUserByTelegramId(telegramId);
       return user ? user.languages : {
         primaryLanguage: 'uk',   // Default
-        secondaryLanguage: 'en'  // Default
+        secondaryLanguage: 'es'  // Default
       };
     } catch (error) {
       logger.error('Error getting user languages:', error);
       return {
         primaryLanguage: 'uk',   // Default
-        secondaryLanguage: 'en'  // Default
+        secondaryLanguage: 'es'  // Default
       };
     }
   }

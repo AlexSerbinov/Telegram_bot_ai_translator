@@ -1,192 +1,36 @@
-const OpenAI = require('openai');
-const fs = require('fs-extra');
-const { config } = require('../config/config');
 const logger = require('../utils/logger');
+const elevenLabsService = require('./elevenLabsService');
+const geminiService = require('./geminiService');
 
 class OpenAIService {
-  constructor() {
-    this.client = new OpenAI({
-      apiKey: config.openai.apiKey,
-    });
-    
-    // Mapping between Whisper language names and our language codes
-    this.whisperLanguageMap = {
-      'ukrainian': 'uk',
-      'english': 'en',
-      'georgian': 'ka',
-      'indonesian': 'id',
-      'russian': 'ru',
-      // Alternative names
-      'uk': 'uk',
-      'en': 'en', 
-      'ka': 'ka',
-      'id': 'id',
-      'ru': 'ru'
-    };
-  }
+  constructor() {}
 
   /**
-   * Normalize Whisper language name to our language code
-   */
-  normalizeLanguage(whisperLanguage) {
-    const normalized = this.whisperLanguageMap[whisperLanguage.toLowerCase()];
-    if (!normalized) {
-      logger.warn(`Unknown Whisper language: ${whisperLanguage}, defaulting to 'uk'`);
-      return 'uk';
-    }
-    return normalized;
-  }
-
-  /**
-   * Convert speech to text using Whisper with automatic language detection
+   * Convert speech to text using ElevenLabs Scribe V2
    */
   async speechToText(audioFilePath, language = 'auto') {
-    try {
-      logger.info(`Converting speech to text with language detection`);
-      
-      const transcription = await this.client.audio.transcriptions.create({
-        file: fs.createReadStream(audioFilePath),
-        model: config.openai.models.whisper,
-        language: language === 'auto' ? undefined : language,
-        response_format: 'verbose_json' // Get language info
-      });
-
-      const result = {
-        text: transcription.text,
-        detectedLanguage: this.normalizeLanguage(transcription.language)
-      };
-
-      logger.info(`Speech-to-text successful. Detected language: ${transcription.language} -> ${result.detectedLanguage}`);
-      return result;
-    } catch (error) {
-      logger.error('Error in speech-to-text conversion:', error);
-      throw error;
-    }
+    return elevenLabsService.speechToText(audioFilePath, language);
   }
 
   /**
-   * Detect language of text using GPT (as backup to Whisper)
+   * Detect language of text using Gemini
    */
   async detectTextLanguage(text, expectedLanguages = ['uk', 'en', 'ka', 'id', 'ru']) {
-    try {
-      logger.info(`Detecting language of text using GPT`);
-      
-      const languageNames = expectedLanguages.map(code => {
-        const info = require('../config/config').config.languages[code];
-        return `${code} (${info.name})`;
-      }).join(', ');
-      
-      const response = await this.client.chat.completions.create({
-        model: config.openai.models.gpt,
-        messages: [
-          {
-            role: 'system',
-            content: `You are a language detection expert. Analyze the given text and determine which language it is written in. Respond with ONLY the language code from this list: ${languageNames}. If unsure, respond with the most likely language code.`
-          },
-          {
-            role: 'user',
-            content: `Detect the language of this text: "${text}"`
-          }
-        ],
-        temperature: 0.1,
-        max_tokens: 10
-      });
-
-      const detectedLanguage = response.choices[0].message.content.trim().toLowerCase();
-      
-      // Extract just the language code (in case GPT returned more than just the code)
-      const languageCode = detectedLanguage.split(' ')[0];
-      
-      // Validate it's one of our supported languages
-      if (expectedLanguages.includes(languageCode)) {
-        logger.info(`GPT detected language: ${languageCode}`);
-        return languageCode;
-      } else {
-        logger.warn(`GPT returned unexpected language: ${detectedLanguage}, falling back to first expected language`);
-        return expectedLanguages[0];
-      }
-    } catch (error) {
-      logger.error('Error in GPT language detection:', error);
-      return expectedLanguages[0]; // Fallback to first expected language
-    }
+    return geminiService.detectTextLanguage(text, expectedLanguages);
   }
 
   /**
-   * Translate text using GPT
+   * Translate text using Gemini
    */
   async translateText(text, fromLanguage, toLanguage) {
-    try {
-      logger.info(`Translating from ${fromLanguage} to ${toLanguage}`);
-      
-      const response = await this.client.chat.completions.create({
-        model: config.openai.models.gpt,
-        messages: [
-          {
-            role: 'system',
-            content: `You are a professional translator. Translate the following text from ${fromLanguage} to ${toLanguage}. Return only the translation without any additional text or explanations.`
-          },
-          {
-            role: 'user',
-            content: text
-          }
-        ],
-        temperature: 0.1,
-        max_tokens: 1000
-      });
-
-      const translation = response.choices[0].message.content.trim();
-      logger.info('Translation successful');
-      return translation;
-    } catch (error) {
-      logger.error('Error in translation:', error);
-      throw error;
-    }
+    return geminiService.translateText(text, fromLanguage, toLanguage);
   }
 
   /**
    * Perform back-translation for verification
    */
   async backTranslate(translatedText, originalLanguage, translationLanguage) {
-    try {
-      logger.info(`Back-translating from ${translationLanguage} to ${originalLanguage}`);
-      
-      const backTranslation = await this.translateText(
-        translatedText, 
-        translationLanguage, 
-        originalLanguage
-      );
-      
-      logger.info('Back-translation successful');
-      return backTranslation;
-    } catch (error) {
-      logger.error('Error in back-translation:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Convert text to speech
-   */
-  async textToSpeech(text, language = 'en', outputPath) {
-    try {
-      logger.info(`Converting text to speech for language: ${language}`);
-      
-      const mp3 = await this.client.audio.speech.create({
-        model: config.openai.models.tts,
-        voice: 'alloy', // You can make this configurable
-        input: text,
-        speed: 1.0
-      });
-
-      const buffer = Buffer.from(await mp3.arrayBuffer());
-      await fs.writeFile(outputPath, buffer);
-      
-      logger.info('Text-to-speech conversion successful');
-      return outputPath;
-    } catch (error) {
-      logger.error('Error in text-to-speech conversion:', error);
-      throw error;
-    }
+    return geminiService.backTranslate(translatedText, originalLanguage, translationLanguage);
   }
 
   /**

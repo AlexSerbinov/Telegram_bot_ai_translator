@@ -92,6 +92,18 @@ class AITranslatorBot {
     this.bot.command('limits', commandHandlers.handleLimits.bind(commandHandlers));
     this.bot.command('help', commandHandlers.handleHelp.bind(commandHandlers));
     
+    // Voice Mini App command
+    this.bot.command('voice', async (ctx) => {
+      await ctx.reply('🎤 Відкрийте голосовий перекладач:', {
+        reply_markup: {
+          inline_keyboard: [[{
+            text: '🎤 Voice Translator',
+            web_app: { url: `${config.server.webappUrl}/webapp/index.html` }
+          }]]
+        }
+      });
+    });
+
     // Development commands (hidden)
     this.bot.command('go_premium', commandHandlers.handleGoPremium.bind(commandHandlers));
     this.bot.command('go_free', commandHandlers.handleGoFree.bind(commandHandlers));
@@ -104,8 +116,13 @@ class AITranslatorBot {
     // Callback query handler
     this.bot.on('callback_query', callbackHandlers.handleCallback.bind(callbackHandlers));
 
-    // Text message handler (for unknown commands)
-    this.bot.on('text', commandHandlers.handleUnknownText.bind(commandHandlers));
+    // Text message handler: check reply keyboard buttons first, then unknown
+    this.bot.on('text', async (ctx) => {
+      const handled = await audioHandler.handleLanguageButton(ctx);
+      if (!handled) {
+        await commandHandlers.handleUnknownText(ctx);
+      }
+    });
   }
 
   /**
@@ -133,15 +150,23 @@ class AITranslatorBot {
       // Ensure temp directory exists
       await fs.ensureDir(config.bot.tempAudioDir);
       
-      // Start bot
-      await this.bot.launch();
-      
-      logger.info('🤖 AI Translator Bot started successfully!');
+      // Start Express server for Mini App
+      const { startServer } = require('./server');
+      startServer();
+
+      // Start bot (don't crash Express if Telegram polling fails)
+      try {
+        await this.bot.launch();
+        logger.info('🤖 AI Translator Bot started successfully!');
+      } catch (botError) {
+        logger.error('⚠️ Telegram bot failed to start (Express server still running):', botError.message);
+      }
+
       logger.info(`Environment: ${config.bot.environment}`);
       logger.info(`Temp audio directory: ${config.bot.tempAudioDir}`);
-      
+
     } catch (error) {
-      logger.error('Failed to start bot:', error);
+      logger.error('Failed to start:', error);
       process.exit(1);
     }
   }

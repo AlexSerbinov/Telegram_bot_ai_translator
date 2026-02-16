@@ -282,22 +282,24 @@ class AudioHandler {
     try {
       const detectedLang = languageService.getLanguageInfo(result.detectedLanguage);
       const targetLang = languageService.getLanguageInfo(result.targetLanguage);
-      
+
       // Simple format: just translation and original
       const message = `${targetLang.flag} **${result.translated}**
 
 🗣️ Оригінал (${detectedLang.flag}): ${result.original}`;
 
-      // Simple keyboard - just settings
+      // Reply keyboard with two language buttons
+      const primaryLang = config.languages[user.languages.primaryLanguage];
+      const secondaryLang = config.languages[user.languages.secondaryLanguage];
+
       const keyboard = {
-        inline_keyboard: [
+        keyboard: [
           [
-            {
-              text: '⚙️ Налаштування',
-              callback_data: 'open_settings'
-            }
+            { text: `🎤 ${primaryLang.flag} ${primaryLang.nameUk}` },
+            { text: `🎤 ${secondaryLang.flag} ${secondaryLang.nameUk}` }
           ]
-        ]
+        ],
+        resize_keyboard: true
       };
 
       await ctx.reply(message, {
@@ -305,11 +307,54 @@ class AudioHandler {
         reply_markup: keyboard
       });
 
-      logger.info(`Simple translation sent for user ${ctx.from.id}`);
+      logger.info(`Translation sent for user ${ctx.from.id}`);
     } catch (error) {
       logger.error('Error sending translation result:', error);
       throw error;
     }
+  }
+
+  /**
+   * Handle reply keyboard language button press
+   * Returns true if the text was a language button, false otherwise
+   */
+  async handleLanguageButton(ctx) {
+    const text = ctx.message.text;
+    if (!text || !text.startsWith('🎤')) return false;
+
+    const userId = ctx.from.id;
+    const user = await databaseService.getUserByTelegramId(userId);
+    if (!user) return false;
+
+    // Match button text to language code
+    let matchedLangCode = null;
+    for (const [code, lang] of Object.entries(config.languages)) {
+      if (text === `🎤 ${lang.flag} ${lang.nameUk}`) {
+        matchedLangCode = code;
+        break;
+      }
+    }
+
+    if (!matchedLangCode) return false;
+
+    // Set voice language
+    user.setVoiceInputLanguage(matchedLangCode);
+    user.voiceState.lastSelectedLanguage = matchedLangCode;
+    await user.save();
+
+    const langInfo = config.languages[matchedLangCode];
+    const targetCode = matchedLangCode === user.languages.primaryLanguage
+      ? user.languages.secondaryLanguage
+      : user.languages.primaryLanguage;
+    const targetInfo = config.languages[targetCode];
+
+    await ctx.reply(
+      `✅ Диктуйте ${langInfo.flag} ${langInfo.nameUk} → перекладу на ${targetInfo.flag} ${targetInfo.nameUk}\n\n🎤 Надішліть голосове повідомлення`,
+      { parse_mode: 'Markdown' }
+    );
+
+    logger.info(`User ${userId} selected dictation language: ${matchedLangCode} via reply keyboard`);
+    return true;
   }
 
   /**

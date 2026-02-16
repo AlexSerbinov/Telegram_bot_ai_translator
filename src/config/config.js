@@ -10,10 +10,42 @@ const config = {
   openai: {
     apiKey: process.env.OPENAI_API_KEY,
     models: {
-      whisper: 'whisper-1',
       gpt: 'gpt-4o-mini',
       tts: 'tts-1'
     }
+  },
+
+  // ElevenLabs Configuration
+  elevenLabs: {
+    apiKey: process.env.ELEVEN_LABS_API_KEY,
+    models: {
+      stt: 'scribe_v2',
+      tts: 'eleven_multilingual_v2'
+    },
+    ttsVoice: process.env.ELEVEN_LABS_TTS_VOICE || 'FFHOCNsj5TuX6tRgEswC' // Adam (deep male)
+  },
+
+  // Real-time STT provider for Mini App: 'soniox' | 'elevenlabs'
+  stt: {
+    provider: process.env.STT_PROVIDER || 'soniox'
+  },
+
+  // Soniox Configuration (Real-time STT in Mini App)
+  soniox: {
+    apiKey: process.env.SONIOX_API_KEY,
+    model: 'stt-rt-preview'
+  },
+
+  // Google Gemini Configuration
+  gemini: {
+    apiKey: process.env.GOOGLE_GEMINI_API_KEY,
+    model: 'gemini-3-flash-preview'
+  },
+
+  // Server Configuration (Express for Mini App)
+  server: {
+    port: parseInt(process.env.SERVER_PORT) || 3000,
+    webappUrl: process.env.WEBAPP_URL || 'http://localhost:3000'
   },
 
   // Bot Configuration
@@ -26,11 +58,11 @@ const config = {
 
   // Supported Languages
   languages: {
-    uk: { name: 'Українська', flag: '🇺🇦', openaiCode: 'uk' },
-    en: { name: 'English', flag: '🇺🇸', openaiCode: 'en' },
-    ka: { name: 'ქართული', flag: '🇬🇪', openaiCode: 'ka' },
-    id: { name: 'Bahasa Indonesia', flag: '🇮🇩', openaiCode: 'id' },
-    ru: { name: 'Русский', flag: '🇷🇺', openaiCode: 'ru' }
+    uk: { name: 'Українська', nameUk: 'Українська', flag: '🇺🇦', openaiCode: 'uk' },
+    en: { name: 'English', nameUk: 'Англійська', flag: '🇺🇸', openaiCode: 'en' },
+    es: { name: 'Español', nameUk: 'Іспанська', flag: '🇪🇸', openaiCode: 'es' },
+    ka: { name: 'ქართული', nameUk: 'Грузинська', flag: '🇬🇪', openaiCode: 'ka' },
+    id: { name: 'Bahasa Indonesia', nameUk: 'Індонезійська', flag: '🇮🇩', openaiCode: 'id' },
   },
 
   // MongoDB Configuration

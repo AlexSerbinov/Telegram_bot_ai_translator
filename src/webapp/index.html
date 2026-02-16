@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Voice Translator</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: #F5F0EB;
+      --card: #FFFFFF;
+      --text-primary: #1A1A1A;
+      --text-secondary: #8E8E93;
+      --text-hint: #C4BEB6;
+      --divider: #EDE8E2;
+      --shadow-sm: 0 2px 10px rgba(0,0,0,0.06);
+      --shadow-md: 0 4px 20px rgba(0,0,0,0.08);
+      --recording: #E53935;
+      --accent: var(--tg-theme-button-color, #5B7FFF);
+      --radius-badge: 24px;
+      --radius-card: 20px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+      padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+
+    .app {
+      max-width: 440px;
+      margin: 0 auto;
+      padding: 8px 20px 24px;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* ===== Title ===== */
+    .app-title {
+      text-align: center;
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text-primary);
+      padding: 8px 0 22px;
+      letter-spacing: -0.3px;
+    }
+
+    /* ===== Language Selector ===== */
+    .lang-selector {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .flag-badge {
+      width: 86px;
+      height: 86px;
+      background: var(--card);
+      border: none;
+      border-radius: var(--radius-badge);
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      outline: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    .flag-badge:active { transform: scale(0.93); }
+
+    .flag-badge .flag-emoji {
+      font-size: 44px;
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    .flag-badge.recording {
+      box-shadow: 0 0 0 3px var(--recording), var(--shadow-md);
+      animation: badge-pulse 1.5s ease-in-out infinite;
+    }
+
+    .flag-badge.dimmed {
+      opacity: 0.4;
+      transform: scale(0.95);
+      cursor: default;
+    }
+
+    @keyframes badge-pulse {
+      0%, 100% { box-shadow: 0 0 0 3px var(--recording), var(--shadow-md); }
+      50% { box-shadow: 0 0 0 7px rgba(229, 57, 53, 0.15), var(--shadow-md); }
+    }
+
+    /* Swap button */
+    .swap-btn {
+      width: 38px;
+      height: 38px;
+      background: var(--card);
+      border: none;
+      border-radius: 50%;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      color: var(--text-hint);
+      outline: none;
+      flex-shrink: 0;
+    }
+
+    .swap-btn:active { transform: rotate(180deg) scale(0.9); }
+    .swap-btn svg { width: 18px; height: 18px; }
+
+    /* ===== Content Card ===== */
+    .content-card {
+      background: var(--card);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow-sm);
+      padding: 28px 24px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 300px;
+      margin-bottom: 20px;
+      position: relative;
+    }
+
+    .source-section, .target-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 90px;
+      overflow-y: auto;
+    }
+
+    .card-divider {
+      height: 1px;
+      background: var(--divider);
+      margin: 18px 0;
+      flex-shrink: 0;
+    }
+
+    .lang-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+
+    .text-display {
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1.25;
+      color: var(--text-primary);
+      word-break: break-word;
+      letter-spacing: -0.3px;
+      transition: font-size 0.15s ease;
+    }
+
+    .text-display.hint {
+      font-size: 16px;
+      font-weight: 400;
+      color: var(--text-hint);
+      letter-spacing: 0;
+    }
+
+    .text-display .committed-text {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    .text-display .partial-text {
+      color: var(--text-secondary);
+      font-weight: 400;
+      font-style: italic;
+    }
+
+    .text-display.processing {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      letter-spacing: 0;
+    }
+
+    /* Action buttons row */
+    .action-row {
+      display: none;
+      gap: 8px;
+      margin-top: 14px;
+      justify-content: flex-end;
+    }
+
+    .action-row.visible { display: flex; }
+
+    .action-btn {
+      background: var(--bg);
+      border: none;
+      border-radius: 10px;
+      padding: 7px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.2s ease;
+      letter-spacing: 0.2px;
+    }
+
+    .action-btn:active { transform: scale(0.95); }
+    .action-btn svg { width: 13px; height: 13px; }
+
+    .action-btn.loading { opacity: 0.5; pointer-events: none; }
+
+    .action-btn.playing {
+      color: var(--accent);
+    }
+
+    .action-btn .btn-spinner {
+      width: 13px;
+      height: 13px;
+      border: 2px solid var(--divider);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2.5px solid var(--divider);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ===== Waveform ===== */
+    .wave-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #waveform {
+      width: 100%;
+      height: 48px;
+      display: block;
+    }
+
+    .mic-indicator {
+      color: var(--text-hint);
+      transition: color 0.3s ease;
+    }
+
+    .mic-indicator.active {
+      color: var(--recording);
+      animation: mic-pulse 1s ease-in-out infinite;
+    }
+
+    .mic-indicator svg { width: 22px; height: 22px; }
+
+    @keyframes mic-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* ===== Error Toast ===== */
+    .error-toast {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(16px);
+      background: rgba(30, 30, 30, 0.9);
+      color: #fff;
+      padding: 11px 22px;
+      border-radius: 14px;
+      font-size: 14px;
+      font-weight: 500;
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 100;
+      max-width: 88%;
+      text-align: center;
+      pointer-events: none;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .error-toast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ===== Tap Hint ===== */
+    .tap-hint {
+      text-align: center;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-hint);
+      margin: -12px 0 16px;
+      transition: opacity 0.25s ease;
+    }
+
+    .tap-hint.hidden { opacity: 0; }
+
+    /* ===== Language Column (flag + label) ===== */
+    .lang-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .lang-pick-btn {
+      background: none;
+      border: none;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 8px;
+      transition: background 0.2s;
+      outline: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    .lang-pick-btn:active { background: var(--divider); }
+
+    .lang-pick-btn svg {
+      width: 10px;
+      height: 10px;
+      flex-shrink: 0;
+    }
+
+    /* ===== Bottom Sheet ===== */
+    .sheet-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.3);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      z-index: 200;
+    }
+
+    .sheet-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .lang-sheet {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--card);
+      border-radius: 20px 20px 0 0;
+      padding: 12px 20px calc(20px + env(safe-area-inset-bottom, 0));
+      transform: translateY(100%);
+      transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 201;
+      max-height: 55vh;
+      overflow-y: auto;
+    }
+
+    .lang-sheet.open {
+      transform: translateY(0);
+    }
+
+    .sheet-handle {
+      width: 36px;
+      height: 4px;
+      background: var(--divider);
+      border-radius: 2px;
+      margin: 0 auto 14px;
+    }
+
+    .sheet-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 12px;
+      text-align: center;
+    }
+
+    .lang-option {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 8px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    .lang-option:active { background: var(--bg); }
+
+    .lang-option .opt-flag {
+      font-size: 28px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    .lang-option .opt-names {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .lang-option .opt-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .lang-option .opt-name-uk {
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--text-secondary);
+    }
+
+    .lang-option .opt-check {
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+      color: var(--accent);
+      opacity: 0;
+    }
+
+    .lang-option .opt-check.active {
+      opacity: 1;
+    }
+
+    /* ===== Loading ===== */
+    .loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 400px;
+      gap: 16px;
+    }
+
+    .loading .spinner { width: 34px; height: 34px; border-width: 3px; }
+    .loading-text { color: var(--text-hint); font-size: 15px; }
+
+    /* Fade-in animation */
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .fade-in { animation: fade-in 0.35s ease-out; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- Loading -->
+    <div class="loading" id="loadingState">
+      <div class="spinner"></div>
+      <div class="loading-text">Завантаження...</div>
+    </div>
+
+    <!-- Main content -->
+    <div id="mainContent" style="display:none">
+      <div class="app-title">Voice Translator</div>
+
+      <!-- Flag selector -->
+      <div class="lang-selector">
+        <div class="lang-col">
+          <button class="flag-badge" id="btnPrimary" onclick="handleLangClick('primary')">
+            <span class="flag-emoji" id="primaryFlag"></span>
+          </button>
+          <button class="lang-pick-btn" id="pickPrimary" onclick="openLangPicker('primary')">
+            <span id="primaryLabel"></span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+        </div>
+
+        <button class="swap-btn" id="swapBtn" onclick="swapLanguages()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 3L4 7l4 4"/><path d="M4 7h16"/><path d="M16 21l4-4-4-4"/><path d="M20 17H4"/>
+          </svg>
+        </button>
+
+        <div class="lang-col">
+          <button class="flag-badge" id="btnSecondary" onclick="handleLangClick('secondary')">
+            <span class="flag-emoji" id="secondaryFlag"></span>
+          </button>
+          <button class="lang-pick-btn" id="pickSecondary" onclick="openLangPicker('secondary')">
+            <span id="secondaryLabel"></span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Bottom sheet for language picker -->
+      <div class="sheet-overlay" id="sheetOverlay" onclick="closeLangPicker()"></div>
+      <div class="lang-sheet" id="langSheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">Оберіть мову</div>
+        <div id="langList"></div>
+      </div>
+
+      <!-- Tap hint -->
+      <div class="tap-hint" id="tapHint">Натисніть на прапор і говоріть</div>
+
+      <!-- Content Card -->
+      <div class="content-card">
+        <div class="source-section">
+          <div class="lang-name" id="sourceLang"></div>
+          <div class="text-display" id="sourceText">
+            <span class="hint">Натисніть на прапор та говоріть</span>
+          </div>
+        </div>
+
+        <div class="card-divider"></div>
+
+        <div class="target-section">
+          <div class="lang-name" id="targetLang"></div>
+          <div class="text-display" id="targetText"></div>
+          <div class="action-row" id="actionRow">
+            <button class="action-btn" id="speakBtn" onclick="speakTranslation()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+              </svg>
+              <span id="speakLabel">Озвучити</span>
+            </button>
+            <button class="action-btn" id="copyBtn" onclick="copyTranslation()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+              <span id="copyLabel">Копіювати</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Waveform -->
+      <div class="wave-section">
+        <canvas id="waveform"></canvas>
+        <div class="mic-indicator" id="micIndicator">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="error-toast" id="errorToast"></div>
+  </div>
+
+  <script>
+    // ===== Telegram WebApp =====
+    const WebApp = window.Telegram.WebApp;
+    WebApp.ready();
+    WebApp.expand();
+    WebApp.setHeaderColor('#F5F0EB');
+    WebApp.setBackgroundColor('#F5F0EB');
+
+    const telegramId = WebApp.initDataUnsafe?.user?.id;
+
+    // ===== Debug logging to server =====
+    let _debugQueue = [];
+    let _debugTimer = null;
+    function debugLog(tag, data) {
+      _debugQueue.push({ tag, data, t: Date.now() });
+      if (!_debugTimer) {
+        _debugTimer = setTimeout(() => {
+          const batch = _debugQueue;
+          _debugQueue = [];
+          _debugTimer = null;
+          fetch('/api/debug', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tag, data: batch.length === 1 ? batch[0].data : batch })
+          }).catch(() => {});
+        }, 300);
+      }
+    }
+
+    // ===== Soniox sliding window merge =====
+    function mergeWithWindow(accumulated, incoming) {
+      if (!accumulated) return incoming;
+      if (incoming.startsWith(accumulated)) return incoming;
+
+      const trimmed = incoming.trimStart();
+      if (!trimmed) return accumulated;
+
+      // Method 1: suffix-prefix overlap
+      // Find longest suffix of accumulated that equals prefix of incoming
+      const maxOverlap = Math.min(accumulated.length, trimmed.length);
+      for (let len = maxOverlap; len >= 3; len--) {
+        if (trimmed.startsWith(accumulated.slice(-len))) {
+          return accumulated.slice(0, -len) + trimmed;
+        }
+      }
+
+      // Method 2: find incoming's start within accumulated (handles corrections)
+      for (const needleLen of [15, 10, 6]) {
+        if (trimmed.length < needleLen) continue;
+        const needle = trimmed.slice(0, needleLen);
+        const idx = accumulated.lastIndexOf(needle);
+        if (idx >= 0) {
+          return accumulated.slice(0, idx) + trimmed;
+        }
+      }
+
+      // If incoming is already within accumulated, nothing new
+      if (accumulated.includes(trimmed)) return accumulated;
+
+      // Last resort: append new text
+      return accumulated + ' ' + trimmed;
+    }
+
+    // ===== ElevenLabs lang map =====
+    const LANG_MAP = { uk: 'ukr', en: 'eng', es: 'spa', ka: 'kat', id: 'ind', ru: 'rus' };
+
+    // ===== Soniox Client (lazy-loaded) =====
+    let sonioxClient = null;
+    async function getSonioxClient() {
+      if (!sonioxClient) {
+        const { SonioxClient } = await import('https://unpkg.com/@soniox/speech-to-text-web?module');
+        sonioxClient = new SonioxClient({
+          apiKey: async () => {
+            const res = await fetch('/api/token');
+            if (!res.ok) throw new Error('Не вдалося отримати токен');
+            const { token } = await res.json();
+            return token;
+          }
+        });
+      }
+      return sonioxClient;
+    }
+
+    // ===== State =====
+    let sttProvider = 'soniox'; // set from server config
+    let state = 'idle';
+    let userConfig = null;
+    let activeLang = null;    // 'primary' | 'secondary'
+    let currentSource = null; // language code of source
+    let currentTarget = null; // language code of target
+    let finalText = '';
+    let partialText = '';
+    let sttAccumulated = '';  // full accumulated text (merges Soniox sliding window)
+
+    // Audio / WebSocket
+    let mediaStream = null;
+    let audioContext = null;
+    let sourceNode = null;
+    let analyserNode = null;
+    let processorNode = null;
+    let ws = null;
+    let animationId = null;
+
+    // Canvas
+    const canvas = document.getElementById('waveform');
+    const ctx = canvas.getContext('2d');
+    let dataArray = null;
+
+    // DOM
+    const $loading = document.getElementById('loadingState');
+    const $main = document.getElementById('mainContent');
+    const $btnPrimary = document.getElementById('btnPrimary');
+    const $btnSecondary = document.getElementById('btnSecondary');
+    const $primaryFlag = document.getElementById('primaryFlag');
+    const $secondaryFlag = document.getElementById('secondaryFlag');
+    const $sourceLang = document.getElementById('sourceLang');
+    const $sourceText = document.getElementById('sourceText');
+    const $targetLang = document.getElementById('targetLang');
+    const $targetText = document.getElementById('targetText');
+    const $actionRow = document.getElementById('actionRow');
+    const $speakBtn = document.getElementById('speakBtn');
+    const $speakLabel = document.getElementById('speakLabel');
+    const $copyBtn = document.getElementById('copyBtn');
+    const $copyLabel = document.getElementById('copyLabel');
+    const $micIndicator = document.getElementById('micIndicator');
+    const $errorToast = document.getElementById('errorToast');
+    const $primaryLabel = document.getElementById('primaryLabel');
+    const $secondaryLabel = document.getElementById('secondaryLabel');
+    const $tapHint = document.getElementById('tapHint');
+    const $sheetOverlay = document.getElementById('sheetOverlay');
+    const $langSheet = document.getElementById('langSheet');
+    const $langList = document.getElementById('langList');
+
+    // TTS state
+    let ttsAudio = null;
+    let ttsPlaying = false;
+    let ttsCachedText = null;
+
+    // ===== Init =====
+    async function init() {
+      if (!telegramId) {
+        showError('Відкрийте через Telegram бот');
+        $loading.style.display = 'none';
+        $main.style.display = 'block';
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/user/${telegramId}`);
+        if (!res.ok) throw new Error(res.status === 404
+          ? 'Спершу запустіть /start в боті'
+          : 'Помилка завантаження');
+        userConfig = await res.json();
+        sttProvider = userConfig.sttProvider || 'soniox';
+
+        currentSource = userConfig.primaryLanguage;
+        currentTarget = userConfig.secondaryLanguage;
+
+        renderUI();
+        $loading.style.display = 'none';
+        $main.style.display = 'block';
+        resizeCanvas();
+        drawWaveform();
+      } catch (err) {
+        showError(err.message);
+        $loading.style.display = 'none';
+        $main.style.display = 'block';
+      }
+    }
+
+    function renderUI() {
+      const pl = userConfig.languages[userConfig.primaryLanguage];
+      const sl = userConfig.languages[userConfig.secondaryLanguage];
+      $primaryFlag.textContent = pl.flag;
+      $secondaryFlag.textContent = sl.flag;
+      $primaryLabel.textContent = pl.nameUk;
+      $secondaryLabel.textContent = sl.nameUk;
+
+      const src = userConfig.languages[currentSource];
+      const tgt = userConfig.languages[currentTarget];
+      $sourceLang.textContent = src.nameUk;
+      $targetLang.textContent = tgt.nameUk;
+    }
+
+    // ===== Swap languages =====
+    function swapLanguages() {
+      if (state === 'recording' || state === 'processing') return;
+
+      const tmp = currentSource;
+      currentSource = currentTarget;
+      currentTarget = tmp;
+
+      renderUI();
+
+      // If result is showing, swap the display
+      if (state === 'result') {
+        const srcText = $sourceText.textContent;
+        const tgtText = $targetText.textContent;
+        $sourceText.textContent = tgtText;
+        $sourceText.className = 'text-display fade-in';
+        $targetText.textContent = srcText;
+        $targetText.className = 'text-display fade-in';
+      }
+    }
+
+    // ===== Language Picker =====
+    let pickerTarget = null; // 'primary' | 'secondary'
+
+    function openLangPicker(which) {
+      if (state === 'recording' || state === 'processing') return;
+      pickerTarget = which;
+
+      const currentCode = which === 'primary' ? userConfig.primaryLanguage : userConfig.secondaryLanguage;
+      const allLangs = userConfig.languages;
+
+      $langList.innerHTML = Object.entries(allLangs).map(([code, lang]) => `
+        <div class="lang-option" onclick="selectLanguage('${code}')">
+          <span class="opt-flag">${lang.flag}</span>
+          <div class="opt-names">
+            <span class="opt-name">${lang.name}</span>
+            <span class="opt-name-uk">${lang.nameUk}</span>
+          </div>
+          <svg class="opt-check ${code === currentCode ? 'active' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+      `).join('');
+
+      $sheetOverlay.classList.add('open');
+      $langSheet.classList.add('open');
+    }
+
+    function selectLanguage(code) {
+      if (!pickerTarget) return;
+
+      const otherSlot = pickerTarget === 'primary' ? 'secondaryLanguage' : 'primaryLanguage';
+      const thisSlot = pickerTarget === 'primary' ? 'primaryLanguage' : 'secondaryLanguage';
+
+      // If selected language is already on the other side → swap
+      if (userConfig[otherSlot] === code) {
+        userConfig[otherSlot] = userConfig[thisSlot];
+      }
+      userConfig[thisSlot] = code;
+
+      currentSource = userConfig.primaryLanguage;
+      currentTarget = userConfig.secondaryLanguage;
+
+      renderUI();
+      closeLangPicker();
+
+      // Save to server
+      if (telegramId) {
+        fetch(`/api/user/${telegramId}/languages`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            primaryLanguage: userConfig.primaryLanguage,
+            secondaryLanguage: userConfig.secondaryLanguage
+          })
+        }).catch(() => showError('Не вдалося зберегти мову'));
+      }
+    }
+
+    function closeLangPicker() {
+      $sheetOverlay.classList.remove('open');
+      $langSheet.classList.remove('open');
+      pickerTarget = null;
+    }
+
+    // ===== Canvas =====
+    function resizeCanvas() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = 48 * dpr;
+      canvas.style.width = rect.width + 'px';
+      canvas.style.height = '48px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    window.addEventListener('resize', () => {
+      resizeCanvas();
+      if (state !== 'recording') drawWaveform();
+    });
+
+    // ===== Language click =====
+    async function handleLangClick(which) {
+      if (state === 'processing') return;
+
+      if (state === 'recording') {
+        await stopRecording();
+        return;
+      }
+
+      // Stop any playing TTS
+      if (ttsAudio) { ttsAudio.pause(); ttsPlaying = false; }
+      ttsCachedText = null;
+
+      activeLang = which;
+      finalText = '';
+      partialText = '';
+      sttAccumulated = '';
+
+      // Set source/target based on which flag was tapped
+      if (which === 'primary') {
+        currentSource = userConfig.primaryLanguage;
+        currentTarget = userConfig.secondaryLanguage;
+      } else {
+        currentSource = userConfig.secondaryLanguage;
+        currentTarget = userConfig.primaryLanguage;
+      }
+      renderUI();
+
+      $actionRow.classList.remove('visible');
+      setState('recording');
+
+      try {
+        if (sttProvider === 'soniox') {
+          await startRecordingSoniox(which);
+        } else {
+          await startRecordingElevenLabs(which);
+        }
+      } catch (err) {
+        showError(err.name === 'NotAllowedError'
+          ? 'Дозвольте доступ до мікрофона'
+          : (err.message || 'Виникла помилка'));
+        cleanup();
+        setState('idle');
+      }
+    }
+
+    // ===== Soniox recording =====
+    async function startRecordingSoniox(which) {
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      sourceNode = audioContext.createMediaStreamSource(mediaStream);
+      analyserNode = audioContext.createAnalyser();
+      analyserNode.fftSize = 2048;
+      dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+      sourceNode.connect(analyserNode);
+      drawWaveform();
+
+      const langCode = which === 'primary'
+        ? userConfig.primaryLanguage
+        : userConfig.secondaryLanguage;
+
+      const client = await getSonioxClient();
+      client.start({
+        model: 'stt-rt-preview',
+        stream: mediaStream,
+        languageHints: [langCode],
+        onPartialResult(result) {
+          // Soniox RT returns a sliding window — all tokens are partial
+          // We must merge windows to accumulate the full text
+          let windowText = '';
+          for (const token of result.tokens) {
+            windowText += token.text;
+          }
+
+          if (!windowText) return;
+
+          const prevLen = sttAccumulated.length;
+          sttAccumulated = mergeWithWindow(sttAccumulated, windowText);
+          finalText = sttAccumulated;
+          partialText = '';
+
+          if (sttAccumulated.length !== prevLen) {
+            debugLog('STT', {
+              window: windowText.slice(-50),
+              accumulated: sttAccumulated.slice(-80),
+              accLen: sttAccumulated.length
+            });
+          }
+
+          updateTranscript();
+        },
+        onError(status, message) {
+          showError('Помилка розпізнавання');
+          cleanup();
+          setState('idle');
+        }
+      });
+    }
+
+    // ===== ElevenLabs recording =====
+    async function startRecordingElevenLabs(which) {
+      const tokenRes = await fetch('/api/token');
+      if (!tokenRes.ok) throw new Error('Не вдалося отримати токен');
+      const { token } = await tokenRes.json();
+
+      const langCode = which === 'primary'
+        ? userConfig.primaryLanguage
+        : userConfig.secondaryLanguage;
+      const isoCode = LANG_MAP[langCode] || langCode;
+
+      const wsUrl = `wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&language_code=${isoCode}&token=${token}`;
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = async () => {
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (micErr) {
+          showError('Дозвольте доступ до мікрофона');
+          cleanup();
+          setState('idle');
+          return;
+        }
+
+        let targetRate = 16000;
+        try {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        } catch (e) {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const actualRate = audioContext.sampleRate;
+
+        sourceNode = audioContext.createMediaStreamSource(mediaStream);
+
+        analyserNode = audioContext.createAnalyser();
+        analyserNode.fftSize = 2048;
+        dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+        sourceNode.connect(analyserNode);
+
+        processorNode = audioContext.createScriptProcessor(4096, 1, 1);
+        processorNode.onaudioprocess = (e) => {
+          if (state !== 'recording' || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+          let inputData = e.inputBuffer.getChannelData(0);
+          if (actualRate !== targetRate) {
+            inputData = downsample(inputData, actualRate, targetRate);
+          }
+
+          const int16 = floatTo16BitPCM(inputData);
+          const base64 = arrayBufferToBase64(int16.buffer);
+
+          ws.send(JSON.stringify({
+            message_type: 'input_audio_chunk',
+            audio_base_64: base64,
+            sample_rate: targetRate
+          }));
+        };
+
+        sourceNode.connect(processorNode);
+        processorNode.connect(audioContext.destination);
+        drawWaveform();
+      };
+
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        const msgType = msg.type || msg.message_type;
+
+        if (msgType === 'partial_transcript') {
+          partialText = msg.text || '';
+          updateTranscript();
+        }
+        if (msgType === 'committed_transcript') {
+          const t = msg.text || '';
+          if (t) {
+            finalText += (finalText ? ' ' : '') + t;
+            partialText = '';
+            updateTranscript();
+          }
+        }
+      };
+
+      ws.onerror = () => {
+        showError('Помилка з\'єднання');
+        cleanup();
+        setState('idle');
+      };
+
+      ws.onclose = () => {};
+    }
+
+    // ===== Stop recording =====
+    async function stopRecording() {
+      if (sttProvider === 'soniox' && sonioxClient) {
+        try { await sonioxClient.stop(); } catch(e) {}
+      }
+      cleanup();
+
+      const text = (finalText + (partialText ? ' ' + partialText : '')).trim();
+
+      if (!text) {
+        setState('idle');
+        $sourceText.innerHTML = '<span class="hint">Не вдалося розпізнати. Спробуйте ще.</span>';
+        return;
+      }
+
+      setState('processing');
+
+      try {
+        const res = await fetch('/api/translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text,
+            fromLanguage: currentSource,
+            toLanguage: currentTarget
+          })
+        });
+
+        if (!res.ok) throw new Error('Помилка перекладу');
+
+        const data = await res.json();
+        showResult(text, data.translation);
+        setState('result');
+      } catch (err) {
+        showError(err.message || 'Помилка перекладу');
+        setState('idle');
+      }
+    }
+
+    // ===== Cleanup =====
+    function cleanup() {
+      if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+      if (processorNode) { processorNode.disconnect(); processorNode = null; }
+      if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
+      if (analyserNode) { analyserNode.disconnect(); analyserNode = null; }
+      if (audioContext && audioContext.state !== 'closed') { audioContext.close().catch(() => {}); audioContext = null; }
+      if (ws && ws.readyState === WebSocket.OPEN) { ws.close(); }
+      ws = null;
+      if (animationId) { cancelAnimationFrame(animationId); animationId = null; }
+    }
+
+    // ===== State =====
+    function setState(newState) {
+      state = newState;
+
+      $btnPrimary.classList.remove('recording', 'dimmed');
+      $btnSecondary.classList.remove('recording', 'dimmed');
+      $micIndicator.classList.remove('active');
+
+      // Update tap hint per state
+      if (newState === 'idle') {
+        $tapHint.textContent = 'Натисніть на прапор і говоріть';
+        $tapHint.classList.remove('hidden');
+      } else if (newState === 'recording') {
+        $tapHint.textContent = 'Натисніть на прапор ще раз для перекладу';
+        $tapHint.classList.remove('hidden');
+      } else {
+        $tapHint.classList.add('hidden');
+      }
+
+      switch (newState) {
+        case 'idle':
+          $sourceText.innerHTML = '<span class="hint">Натисніть на прапор та говоріть</span>';
+          $targetText.textContent = '';
+          $actionRow.classList.remove('visible');
+          drawWaveform();
+          break;
+
+        case 'recording':
+          if (activeLang === 'primary') {
+            $btnPrimary.classList.add('recording');
+            $btnSecondary.classList.add('dimmed');
+          } else {
+            $btnSecondary.classList.add('recording');
+            $btnPrimary.classList.add('dimmed');
+          }
+          $micIndicator.classList.add('active');
+          $sourceText.innerHTML = '<span class="partial-text">Слухаю...</span>';
+          $targetText.textContent = '';
+          $actionRow.classList.remove('visible');
+          break;
+
+        case 'processing':
+          $sourceText.textContent = finalText;
+          $sourceText.className = 'text-display';
+          $targetText.innerHTML = '<div class="processing"><div class="spinner"></div>Перекладаю...</div>';
+          $targetText.className = 'text-display';
+          $actionRow.classList.remove('visible');
+          drawWaveform();
+          break;
+
+        case 'result':
+          drawWaveform();
+          break;
+      }
+    }
+
+    // ===== Adaptive font sizing =====
+    function adaptFontSize(el, text) {
+      const len = text.length;
+      let size;
+      if (len < 30) size = 28;
+      else if (len < 60) size = 24;
+      else if (len < 120) size = 20;
+      else if (len < 200) size = 17;
+      else size = 15;
+      el.style.fontSize = size + 'px';
+    }
+
+    // ===== Transcript =====
+    function updateTranscript() {
+      let html = '';
+      if (finalText) html += '<span class="committed-text">' + escapeHtml(finalText) + '</span>';
+      if (partialText) html += ' <span class="partial-text">' + escapeHtml(partialText) + '</span>';
+      if (!html) html = '<span class="partial-text">Слухаю...</span>';
+      $sourceText.innerHTML = html;
+      $sourceText.className = 'text-display';
+
+      // Adaptive font size
+      const fullText = (finalText + ' ' + partialText).trim();
+      adaptFontSize($sourceText, fullText);
+
+      // Auto-scroll to show latest text
+      const section = $sourceText.parentElement;
+      section.scrollTop = section.scrollHeight;
+    }
+
+    // ===== Result =====
+    function showResult(original, translation) {
+      $sourceText.textContent = original;
+      $sourceText.className = 'text-display fade-in';
+      adaptFontSize($sourceText, original);
+
+      $targetText.textContent = translation;
+      $targetText.className = 'text-display fade-in';
+      adaptFontSize($targetText, translation);
+
+      $copyLabel.textContent = 'Копіювати';
+      $speakLabel.textContent = 'Озвучити';
+      $speakBtn.classList.remove('loading', 'playing');
+      $actionRow.classList.add('visible');
+    }
+
+    // ===== Copy =====
+    function copyTranslation() {
+      const text = $targetText.textContent;
+      if (!text) return;
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          $copyLabel.textContent = 'Скопійовано!';
+          setTimeout(() => { $copyLabel.textContent = 'Копіювати'; }, 1500);
+        }).catch(() => fallbackCopy(text));
+      } else {
+        fallbackCopy(text);
+      }
+    }
+
+    function fallbackCopy(text) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;left:-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        $copyLabel.textContent = 'Скопійовано!';
+      } catch (e) {
+        $copyLabel.textContent = 'Помилка';
+      }
+      setTimeout(() => { $copyLabel.textContent = 'Копіювати'; }, 1500);
+      document.body.removeChild(ta);
+    }
+
+    // ===== TTS =====
+    async function speakTranslation() {
+      const text = $targetText.textContent;
+      if (!text) return;
+
+      // If already playing, stop
+      if (ttsPlaying && ttsAudio) {
+        ttsAudio.pause();
+        ttsAudio.currentTime = 0;
+        ttsPlaying = false;
+        $speakBtn.classList.remove('playing', 'loading');
+        $speakLabel.textContent = 'Озвучити';
+        return;
+      }
+
+      // Use cached audio if same text
+      if (ttsCachedText === text && ttsAudio) {
+        ttsAudio.currentTime = 0;
+        ttsPlaying = true;
+        $speakBtn.classList.add('playing');
+        $speakLabel.textContent = 'Зупинити';
+        ttsAudio.play();
+        return;
+      }
+
+      $speakBtn.classList.add('loading');
+      $speakLabel.textContent = 'Завантаження...';
+
+      try {
+        const res = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, language: currentTarget })
+        });
+
+        if (!res.ok) throw new Error('TTS failed');
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+
+        if (ttsAudio) {
+          ttsAudio.pause();
+          URL.revokeObjectURL(ttsAudio.src);
+        }
+
+        ttsAudio = new Audio(url);
+        ttsCachedText = text;
+
+        ttsAudio.onended = () => {
+          ttsPlaying = false;
+          $speakBtn.classList.remove('playing');
+          $speakLabel.textContent = 'Озвучити';
+        };
+
+        ttsAudio.onerror = () => {
+          ttsPlaying = false;
+          $speakBtn.classList.remove('playing', 'loading');
+          $speakLabel.textContent = 'Озвучити';
+          showError('Помилка відтворення');
+        };
+
+        $speakBtn.classList.remove('loading');
+        $speakBtn.classList.add('playing');
+        $speakLabel.textContent = 'Зупинити';
+        ttsPlaying = true;
+        await ttsAudio.play();
+      } catch (err) {
+        showError('Помилка озвучення');
+        ttsPlaying = false;
+        $speakBtn.classList.remove('loading', 'playing');
+        $speakLabel.textContent = 'Озвучити';
+      }
+    }
+
+    // ===== Error =====
+    function showError(msg) {
+      $errorToast.textContent = msg;
+      $errorToast.classList.add('visible');
+      setTimeout(() => { $errorToast.classList.remove('visible'); }, 3500);
+    }
+
+    // ===== Waveform =====
+    function drawWaveform() {
+      const w = canvas.width / (window.devicePixelRatio || 1);
+      const h = 48;
+
+      ctx.clearRect(0, 0, w, h);
+
+      const accent = getComputedStyle(document.documentElement).getPropertyValue('--text-hint').trim() || '#C4BEB6';
+
+      if (state === 'recording' && analyserNode && dataArray) {
+        analyserNode.getByteTimeDomainData(dataArray);
+
+        ctx.lineWidth = 1.8;
+        ctx.strokeStyle = 'var(--recording)';
+        ctx.strokeStyle = '#E53935';
+        ctx.globalAlpha = 0.7;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+
+        // Sample fewer points for smoother look
+        const step = 6;
+        const sliceWidth = w / (dataArray.length / step);
+        let x = 0;
+
+        for (let i = 0; i < dataArray.length; i += step) {
+          const v = dataArray[i] / 128.0;
+          const y = (v * h) / 2;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+          x += sliceWidth;
+        }
+
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
+
+        animationId = requestAnimationFrame(drawWaveform);
+      } else {
+        // Flat line
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = accent;
+        ctx.globalAlpha = 0.3;
+        ctx.beginPath();
+        ctx.moveTo(0, h / 2);
+        ctx.lineTo(w, h / 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
+      }
+    }
+
+    // ===== Audio helpers (ElevenLabs) =====
+    function downsample(buffer, fromRate, toRate) {
+      if (fromRate === toRate) return buffer;
+      const ratio = fromRate / toRate;
+      const newLength = Math.round(buffer.length / ratio);
+      const result = new Float32Array(newLength);
+      for (let i = 0; i < newLength; i++) result[i] = buffer[Math.round(i * ratio)];
+      return result;
+    }
+
+    function floatTo16BitPCM(arr) {
+      const out = new Int16Array(arr.length);
+      for (let i = 0; i < arr.length; i++) {
+        const s = Math.max(-1, Math.min(1, arr[i]));
+        out[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      return out;
+    }
+
+    function arrayBufferToBase64(buf) {
+      const bytes = new Uint8Array(buf);
+      let bin = '';
+      for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
+      return btoa(bin);
+    }
+
+    function escapeHtml(text) {
+      const d = document.createElement('div');
+      d.textContent = text;
+      return d.innerHTML;
+    }
+
+    // ===== Start =====
+    init();
+  </script>
+</body>
+</html>
