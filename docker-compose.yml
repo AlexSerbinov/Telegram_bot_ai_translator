@@ -28,6 +28,8 @@ services:
       - MONGODB_URI=mongodb://admin:secretpassword@mongodb:27017/ai-translator?authSource=admin
     env_file:
       - .env
+    ports:
+      - "3001:3001"
     volumes:
       - ./temp:/app/temp
     networks:

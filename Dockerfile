@@ -15,7 +15,7 @@ COPY src/ ./src/
 # Note: Running as root for simplicity with volume mounts
 
 # Expose port (optional, for health checks)
-EXPOSE 3000
+EXPOSE 3001
 
 # Start the application
 CMD ["npm", "start"] 
