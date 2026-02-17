@@ -36,10 +36,21 @@ const config = {
     model: 'stt-rt-preview'
   },
 
+  // Translation provider: 'gemini' | 'groq'
+  translation: {
+    provider: process.env.TRANSLATION_PROVIDER || 'gemini',
+  },
+
   // Google Gemini Configuration
   gemini: {
     apiKey: process.env.GOOGLE_GEMINI_API_KEY,
     model: 'gemini-3-flash-preview'
+  },
+
+  // Groq Configuration (OpenAI-compatible, LPU inference)
+  groq: {
+    apiKey: process.env.GROQ_API_KEY,
+    model: process.env.TRANSLATION_MODEL || 'openai/gpt-oss-120b',
   },
 
   // Server Configuration (Express for Mini App)

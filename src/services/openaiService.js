@@ -1,9 +1,18 @@
 const logger = require('../utils/logger');
 const elevenLabsService = require('./elevenLabsService');
 const geminiService = require('./geminiService');
+const groqService = require('./groqService');
+const { config } = require('../config/config');
 
 class OpenAIService {
   constructor() {}
+
+  /**
+   * Get the active translation service based on config
+   */
+  get translationService() {
+    return config.translation.provider === 'groq' ? groqService : geminiService;
+  }
 
   /**
    * Convert speech to text using ElevenLabs Scribe V2
@@ -16,21 +25,21 @@ class OpenAIService {
    * Detect language of text using Gemini
    */
   async detectTextLanguage(text, expectedLanguages = ['uk', 'en', 'ka', 'id', 'ru']) {
-    return geminiService.detectTextLanguage(text, expectedLanguages);
+    return this.translationService.detectTextLanguage(text, expectedLanguages);
   }
 
   /**
    * Translate text using Gemini
    */
   async translateText(text, fromLanguage, toLanguage) {
-    return geminiService.translateText(text, fromLanguage, toLanguage);
+    return this.translationService.translateText(text, fromLanguage, toLanguage);
   }
 
   /**
    * Perform back-translation for verification
    */
   async backTranslate(translatedText, originalLanguage, translationLanguage) {
-    return geminiService.backTranslate(translatedText, originalLanguage, translationLanguage);
+    return this.translationService.backTranslate(translatedText, originalLanguage, translationLanguage);
   }
 
   /**

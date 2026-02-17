@@ -4,6 +4,7 @@ const { config } = require('./config/config');
 const logger = require('./utils/logger');
 const elevenLabsService = require('./services/elevenLabsService');
 const geminiService = require('./services/geminiService');
+const groqService = require('./services/groqService');
 const databaseService = require('./services/databaseService');
 
 function createServer() {
@@ -55,7 +56,8 @@ function createServer() {
         return res.status(400).json({ error: 'Unsupported language code' });
       }
 
-      const translation = await geminiService.translateText(text, fromLang.name, toLang.name);
+      const translationService = config.translation.provider === 'groq' ? groqService : geminiService;
+      const translation = await translationService.translateText(text, fromLang.name, toLang.name);
       res.json({ translation, fromLanguage, toLanguage });
     } catch (error) {
       logger.error('Error translating text:', error);

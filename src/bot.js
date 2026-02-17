@@ -154,6 +154,8 @@ class AITranslatorBot {
       const { startServer } = require('./server');
       startServer();
 
+      logger.info(`🔄 Translation provider: ${config.translation.provider} (model: ${config.translation.provider === 'groq' ? config.groq.model : config.gemini.model})`);
+
       // Set Menu Button for Mini App
       this.bot.telegram.setChatMenuButton({
         menuButton: {
