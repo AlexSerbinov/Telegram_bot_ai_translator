@@ -8,8 +8,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Sync .env to server
-        if: ${{ secrets.PROD_ENV_FILE != '' }}
+      - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -17,19 +16,17 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           envs: PROD_ENV_FILE
           script: |
-            echo "$PROD_ENV_FILE" > /opt/ai-translator/.env
-        env:
-          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
-
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: root
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: |
             cd /opt/ai-translator
+
+            # Sync .env from GitHub Secret (if set)
+            if [ -n "$PROD_ENV_FILE" ]; then
+              echo "$PROD_ENV_FILE" > .env
+              echo ".env synced from GitHub Secret"
+            fi
+
             git fetch origin
             git reset --hard origin/main
             npm install --omit=dev
             pm2 restart ai-translator
+        env:
+          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
