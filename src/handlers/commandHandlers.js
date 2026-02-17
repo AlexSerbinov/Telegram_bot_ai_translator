@@ -21,28 +21,32 @@ class CommandHandlers {
       const user = await databaseService.getUserByTelegramId(userId);
       const hasLanguagesConfigured = user && user.languages.primaryLanguage && user.languages.secondaryLanguage;
       
+      const { config } = require('../config/config');
+      const webappUrl = config.server.webappUrl;
+      const isHttps = webappUrl && webappUrl.startsWith('https://');
+      const voiceTranslatorBtn = isHttps
+        ? { text: '🎤 Відкрити Voice Translator', web_app: { url: `${webappUrl}/webapp/index.html` } }
+        : { text: '🎤 Voice Translator (/voice)', callback_data: 'show_help' };
       let welcomeMessage, keyboard;
-      
+
       if (hasLanguagesConfigured) {
         // User has languages configured - show working mode
-        const { config } = require('../config/config');
         const primaryLang = config.languages[user.languages.primaryLanguage];
         const secondaryLang = config.languages[user.languages.secondaryLanguage];
         
         if (user.subscriptionType === 'premium') {
           // Premium user - show automatic mode
-          welcomeMessage = `🤖 Привіт, ${userName}! 
+          welcomeMessage = `🤖 Привіт, ${userName}!
 
-👑 **Premium режим активний**
+👑 Premium режим | ${primaryLang.flag} ↔ ${secondaryLang.flag}
 
-Ваші мови: ${primaryLang.flag} ${primaryLang.name} ↔ ${secondaryLang.flag} ${secondaryLang.name}
-
-💡 Система автоматично визначить мову та перекладе на іншу
-
-Тепер ви можете надсилати голосові повідомлення для автоматичного перекладу 🎤`;
+🎤 Надсилайте голосові або відкрийте Voice Translator:`;
 
           keyboard = {
             inline_keyboard: [
+              [
+                voiceTranslatorBtn
+              ],
               [
                 {
                   text: '⚙️ Змінити мови',
@@ -57,18 +61,17 @@ class CommandHandlers {
           };
         } else {
           // Free user - show language selection buttons
-          welcomeMessage = `🤖 Привіт, ${userName}! 
+          welcomeMessage = `🤖 Привіт, ${userName}!
 
-🆓 **Безкоштовний режим**
+🆓 Безкоштовний режим | ${primaryLang.flag} ↔ ${secondaryLang.flag}
 
-Ваші мови: ${primaryLang.flag} ${primaryLang.name} ↔ ${secondaryLang.flag} ${secondaryLang.name}
-
-Для безкоштовної версії потрібно спочатку вибрати мову диктування, а потім записати голосове повідомлення.
-
-Оберіть мову диктування:`;
+🎤 Відкрийте Voice Translator або оберіть мову диктування:`;
 
           keyboard = {
             inline_keyboard: [
+              [
+                voiceTranslatorBtn
+              ],
               [
                 {
                   text: `🎤 Диктувати ${primaryLang.flag}`,
@@ -94,30 +97,21 @@ class CommandHandlers {
         }
       } else {
         // User needs to configure languages
-        welcomeMessage = `🤖 Привіт, ${userName}! 
+        welcomeMessage = `🤖 Привіт, ${userName}!
 
-Я AI Translator Bot - твій особистий помічник для перекладу голосових повідомлень.
+Я Voice Translator — перекладаю голосові повідомлення в реальному часі.
 
-🤖 **Як це працює:**
-1. Оберіть дві мови у налаштуваннях
-2. Надішліть голосове повідомлення будь-якою з цих мов
-3. Система автоматично розпізнає мову та перекладе на іншу
-4. Отримаєте переклад з верифікацією якості
-
-⚙️ Спочатку налаштуйте дві мови командою /settings`;
+⚙️ Спочатку налаштуйте дві мови:`;
 
         keyboard = {
           inline_keyboard: [
             [
-              {
-                text: '⚙️ Налаштувати мови',
-                callback_data: 'open_settings'
-              }
+              voiceTranslatorBtn
             ],
             [
               {
-                text: '📊 Мої ліміти',
-                callback_data: 'show_limits'
+                text: '⚙️ Налаштувати мови',
+                callback_data: 'open_settings'
               }
             ]
           ]

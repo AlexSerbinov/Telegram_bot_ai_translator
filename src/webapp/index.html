@@ -216,13 +216,19 @@
     .action-btn.loading {
       pointer-events: none;
       color: var(--accent);
-      animation: btn-loading 1s ease-in-out infinite;
     }
 
-    @keyframes btn-loading {
-      0%, 100% { opacity: 0.5; }
-      50% { opacity: 1; }
+    .action-btn.loading .btn-spinner {
+      display: inline-block;
+      width: 13px;
+      height: 13px;
+      border: 2px solid var(--divider);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
     }
+
+    .action-btn.loading svg { display: none; }
 
     .action-btn.playing {
       color: var(--accent);
@@ -712,6 +718,11 @@
     let ttsPlaying = false;
     let ttsCachedText = null;
 
+    function clearSpeakSpinner() {
+      const sp = $speakBtn.querySelector('.btn-spinner');
+      if (sp) sp.remove();
+    }
+
     // ===== Init =====
     async function init() {
       if (!telegramId) {
@@ -1184,6 +1195,7 @@
       $copyLabel.textContent = 'Копіювати';
       $speakLabel.textContent = 'Озвучити';
       $speakBtn.classList.remove('loading', 'playing');
+      clearSpeakSpinner();
       $actionRow.classList.add('visible');
     }
 
@@ -1229,6 +1241,7 @@
         ttsAudio.currentTime = 0;
         ttsPlaying = false;
         $speakBtn.classList.remove('playing', 'loading');
+        clearSpeakSpinner();
         $speakLabel.textContent = 'Озвучити';
         return;
       }
@@ -1244,7 +1257,8 @@
       }
 
       $speakBtn.classList.add('loading');
-      $speakLabel.textContent = 'Озвучити';
+      $speakBtn.querySelector('svg').insertAdjacentHTML('afterend', '<span class="btn-spinner"></span>');
+      $speakLabel.textContent = 'Завантаження...';
 
       try {
         const res = await fetch('/api/tts', {
@@ -1275,11 +1289,13 @@
         ttsAudio.onerror = () => {
           ttsPlaying = false;
           $speakBtn.classList.remove('playing', 'loading');
+          clearSpeakSpinner();
           $speakLabel.textContent = 'Озвучити';
           showError('Помилка відтворення');
         };
 
         $speakBtn.classList.remove('loading');
+        clearSpeakSpinner();
         $speakBtn.classList.add('playing');
         $speakLabel.textContent = 'Зупинити';
         ttsPlaying = true;
@@ -1288,6 +1304,7 @@
         showError('Помилка озвучення');
         ttsPlaying = false;
         $speakBtn.classList.remove('loading', 'playing');
+        clearSpeakSpinner();
         $speakLabel.textContent = 'Озвучити';
       }
     }
