@@ -154,10 +154,38 @@ class AITranslatorBot {
       const { startServer } = require('./server');
       startServer();
 
+      // Set Menu Button for Mini App
+      this.bot.telegram.setChatMenuButton({
+        menuButton: {
+          type: 'web_app',
+          text: 'Translator',
+          web_app: { url: `${config.server.webappUrl}/webapp/index.html` }
+        }
+      }).then(() => {
+        logger.info('✅ Chat menu button set successfully');
+      }).catch(err => {
+        logger.warn('⚠️ Failed to set chat menu button:', err.message);
+      });
+
+      // Set bot commands list
+      this.bot.telegram.setMyCommands([
+        { command: 'start', description: 'Запустити бота' },
+        { command: 'voice', description: '🎤 Voice Translator Mini App' },
+        { command: 'settings', description: '⚙️ Налаштування мов' },
+        { command: 'limits', description: '📊 Ліміти використання' },
+        { command: 'stats', description: '📈 Статистика' },
+        { command: 'help', description: '📖 Довідка' },
+      ]).then(() => {
+        logger.info('✅ Bot commands set successfully');
+      }).catch(err => {
+        logger.warn('⚠️ Failed to set bot commands:', err.message);
+      });
+
       // Start bot (don't crash Express if Telegram polling fails)
       try {
-        await this.bot.launch();
-        logger.info('🤖 AI Translator Bot started successfully!');
+        this.bot.launch().then(() => {
+          logger.info('🤖 AI Translator Bot started successfully!');
+        });
       } catch (botError) {
         logger.error('⚠️ Telegram bot failed to start (Express server still running):', botError.message);
       }
