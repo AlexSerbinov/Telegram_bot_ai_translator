@@ -25,12 +25,12 @@ const userSchema = new mongoose.Schema({
     primaryLanguage: {
       type: String,
       default: 'uk',
-      enum: ['uk', 'en', 'es', 'ka', 'id', 'ru']
+      enum: ['uk', 'en', 'es', 'ka', 'id', 'ru', 'hu']
     },
     secondaryLanguage: {
       type: String,
       default: 'es',
-      enum: ['uk', 'en', 'es', 'ka', 'id', 'ru']
+      enum: ['uk', 'en', 'es', 'ka', 'id', 'ru', 'hu']
     }
   },
 
@@ -99,12 +99,12 @@ const userSchema = new mongoose.Schema({
   voiceState: {
     selectedInputLanguage: {
       type: String,
-      enum: ['uk', 'en', 'es', 'ka', 'id', 'ru'],
+      enum: ['uk', 'en', 'es', 'ka', 'id', 'ru', 'hu'],
       required: false
     },
     lastSelectedLanguage: {
       type: String,
-      enum: ['uk', 'en', 'es', 'ka', 'id', 'ru'],
+      enum: ['uk', 'en', 'es', 'ka', 'id', 'ru', 'hu'],
       required: false
     },
     isWaitingForVoice: {

@@ -17,6 +17,7 @@ class ElevenLabsService {
       'kat': 'ka',
       'ind': 'id',
       'rus': 'ru',
+      'hun': 'hu',
     };
 
     // Reverse mapping: our codes to ElevenLabs ISO-639-3 codes
@@ -27,6 +28,7 @@ class ElevenLabsService {
       'ka': 'kat',
       'id': 'ind',
       'ru': 'rus',
+      'hu': 'hun',
     };
   }
 

@@ -65,6 +65,41 @@ function createServer() {
     }
   });
 
+  // Auto-detect source language from pair and translate to opposite language
+  app.post('/api/translate-auto', async (req, res) => {
+    try {
+      const { text, primaryLanguage, secondaryLanguage } = req.body;
+      if (!text || !primaryLanguage || !secondaryLanguage) {
+        return res.status(400).json({ error: 'Missing required fields: text, primaryLanguage, secondaryLanguage' });
+      }
+
+      const primary = config.languages[primaryLanguage];
+      const secondary = config.languages[secondaryLanguage];
+      if (!primary || !secondary) {
+        return res.status(400).json({ error: 'Unsupported language code' });
+      }
+      if (primaryLanguage === secondaryLanguage) {
+        return res.status(400).json({ error: 'Languages must be different' });
+      }
+
+      const translationService = config.translation.provider === 'groq' ? groqService : geminiService;
+      const detectedLanguage = await translationService.detectTextLanguage(text, [primaryLanguage, secondaryLanguage]);
+      const targetLanguage = detectedLanguage === primaryLanguage ? secondaryLanguage : primaryLanguage;
+      const fromLang = config.languages[detectedLanguage];
+      const toLang = config.languages[targetLanguage];
+      const translation = await translationService.translateText(text, fromLang.name, toLang.name);
+
+      res.json({
+        translation,
+        detectedLanguage,
+        targetLanguage
+      });
+    } catch (error) {
+      logger.error('Error in auto translation:', error);
+      res.status(500).json({ error: 'Auto translation failed' });
+    }
+  });
+
   // Text-to-Speech via ElevenLabs
   app.post('/api/tts', async (req, res) => {
     try {

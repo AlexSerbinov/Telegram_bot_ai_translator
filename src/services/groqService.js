@@ -75,7 +75,11 @@ class GroqService {
       logger.info(`[Groq] Translating from ${fromLanguage} to ${toLanguage}`);
 
       const translation = await this.generate(
-        `You are a professional translator. Translate the following text from ${fromLanguage} to ${toLanguage}. Return only the translation without any additional text or explanations.`,
+        `You are a professional translation engine.
+Translate the user text into ${toLanguage}.
+The expected source language is ${fromLanguage}, but if the text is actually in another language (or mixed), still translate it into ${toLanguage}.
+Never refuse, never ask clarifying questions, and never mention language mismatch.
+Return only the translation text with no explanations, labels, or quotes.`,
         text
       );
 

@@ -18,7 +18,8 @@ Telegram User
 **Stack:** Node.js 18+, Express 5, Telegraf, MongoDB 7, Mongoose
 
 **Key services:**
-- **Gemini** — translation + language detection
+- **Gemini** — translation + language detection (default provider)
+- **Groq** — alternative translation provider (OpenAI-compatible, LPU inference)
 - **ElevenLabs** — speech-to-text (Scribe V2) + text-to-speech
 - **Soniox** — real-time STT in Mini App (via WebSocket)
 
@@ -71,7 +72,7 @@ pm2 stop ai-translator        # stop
 ```
 
 ### Server .env
-Located at `/opt/ai-translator/.env` — NOT tracked in git. Contains PROD bot token and `WEBAPP_URL=https://89-167-19-222.sslip.io`.
+Located at `/opt/ai-translator/.env` — synced automatically from GitHub Secret `PROD_ENV_FILE` on each deploy. See "Env Sync" section below.
 
 ---
 
@@ -81,18 +82,54 @@ Located at `/opt/ai-translator/.env` — NOT tracked in git. Contains PROD bot t
 **Workflow:** `.github/workflows/deploy.yml`
 
 ```
-Push to main → GitHub Actions → SSH to server → git reset --hard → npm install → pm2 restart
+Push to main → GitHub Actions → SSH to server → sync .env → git reset --hard → npm install → pm2 restart
 ```
 
 **GitHub Secrets:**
 - `DEPLOY_SSH_KEY` — SSH private key for server access
 - `DEPLOY_HOST` — `89.167.19.222`
+- `PROD_ENV_FILE` — full production `.env` content (synced via `npm run env:push`)
 
 ### Deploy flow
 1. Work on `dev` branch
 2. When ready, merge `dev` → `main` and push
 3. GitHub Actions auto-deploys to server (~10 seconds)
-4. PM2 restarts the bot with new code
+4. `.env` is synced from `PROD_ENV_FILE` secret before restart
+5. PM2 restarts the bot with new code
+
+### Env Sync (`.env` → production)
+
+Production `.env` is managed via GitHub Secret, not manually on the server.
+
+**How it works:**
+```
+.env (local, dev values)
+  + .env.production.overrides (prod bot token, URL, NODE_ENV)
+  = GitHub Secret PROD_ENV_FILE
+  → deploy workflow writes to /opt/ai-translator/.env
+```
+
+**Files:**
+- `.env.production.overrides` — prod-specific values that differ from local (gitignored)
+- `env.production.overrides.example` — template for the overrides file
+- `scripts/sync-env.sh` — script that merges `.env` + overrides and pushes to GitHub Secret
+
+**Usage:**
+```bash
+# One-time setup
+cp env.production.overrides.example .env.production.overrides
+# Edit with prod bot token (WEBAPP_URL and NODE_ENV are pre-filled)
+
+# When you add/change keys in .env
+npm run env:push
+# Shows keys, asks confirmation, pushes to GitHub Secret
+# Next deploy will use the updated .env
+```
+
+**Prod overrides** (values that differ from dev):
+- `TELEGRAM_BOT_TOKEN` — prod bot token (`7916554697:...`)
+- `WEBAPP_URL` — `https://89-167-19-222.sslip.io`
+- `NODE_ENV` — `production`
 
 ---
 
@@ -148,8 +185,9 @@ src/
 ├── services/
 │   ├── databaseService.js  # MongoDB operations
 │   ├── elevenLabsService.js# STT (Scribe V2) + TTS + realtime token
-│   ├── geminiService.js    # Translation + language detection
-│   ├── openaiService.js    # Orchestrator: delegates to ElevenLabs + Gemini
+│   ├── geminiService.js    # Translation + language detection (default)
+│   ├── groqService.js      # Translation via Groq LPU (OpenAI-compatible)
+│   ├── openaiService.js    # Orchestrator: delegates to active provider + ElevenLabs
 │   └── languageService.js  # Language metadata + keyboard generation
 ├── utils/logger.js         # Console logger
 └── webapp/index.html       # Telegram Mini App (single HTML file)
@@ -165,6 +203,9 @@ src/
 | `OPENAI_API_KEY` | Yes | OpenAI key (required by validator) |
 | `ELEVEN_LABS_API_KEY` | No | ElevenLabs STT/TTS |
 | `GOOGLE_GEMINI_API_KEY` | No | Gemini translation |
+| `GROQ_API_KEY` | No | Groq LPU translation (when `TRANSLATION_PROVIDER=groq`) |
+| `TRANSLATION_PROVIDER` | No | `gemini` (default) or `groq` |
+| `TRANSLATION_MODEL` | No | Model for Groq (default: `openai/gpt-oss-120b`) |
 | `SONIOX_API_KEY` | No | Soniox real-time STT |
 | `STT_PROVIDER` | No | `soniox` or `elevenlabs` (default: `soniox`) |
 | `MONGODB_URI` | No | MongoDB connection string |

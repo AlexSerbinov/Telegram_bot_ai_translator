@@ -33,7 +33,7 @@ const config = {
   // Soniox Configuration (Real-time STT in Mini App)
   soniox: {
     apiKey: process.env.SONIOX_API_KEY,
-    model: 'stt-rt-preview'
+    model: 'stt-rt-v4'
   },
 
   // Translation provider: 'gemini' | 'groq'
@@ -74,6 +74,7 @@ const config = {
     es: { name: 'Español', nameUk: 'Іспанська', flag: '🇪🇸', openaiCode: 'es' },
     ka: { name: 'ქართული', nameUk: 'Грузинська', flag: '🇬🇪', openaiCode: 'ka' },
     id: { name: 'Bahasa Indonesia', nameUk: 'Індонезійська', flag: '🇮🇩', openaiCode: 'id' },
+    hu: { name: 'Magyar', nameUk: 'Угорська', flag: '🇭🇺', openaiCode: 'hu' },
   },
 
   // MongoDB Configuration

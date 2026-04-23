@@ -11,112 +11,34 @@ class CommandHandlers {
     try {
       const userId = ctx.from.id;
       const userName = ctx.from.first_name || 'Friend';
-      
-      // User already created in middleware, just get the user
-      // The middleware handles user creation with findOrCreateUser
-      
+
       logger.info(`User ${userId} started the bot`);
-      
-      // Check if user has languages configured
-      const user = await databaseService.getUserByTelegramId(userId);
-      const hasLanguagesConfigured = user && user.languages.primaryLanguage && user.languages.secondaryLanguage;
-      
+
       const { config } = require('../config/config');
       const webappUrl = config.server.webappUrl;
       const isHttps = webappUrl && webappUrl.startsWith('https://');
-      const voiceTranslatorBtn = isHttps
-        ? { text: '🎤 Відкрити Voice Translator', web_app: { url: `${webappUrl}/webapp/index.html` } }
-        : { text: '🎤 Voice Translator (/voice)', callback_data: 'show_help' };
-      let welcomeMessage, keyboard;
 
-      if (hasLanguagesConfigured) {
-        // User has languages configured - show working mode
-        const primaryLang = config.languages[user.languages.primaryLanguage];
-        const secondaryLang = config.languages[user.languages.secondaryLanguage];
-        
-        if (user.subscriptionType === 'premium') {
-          // Premium user - show automatic mode
-          welcomeMessage = `🤖 Привіт, ${userName}!
+      const welcomeMessage = `🤖 Привіт, ${userName}!
 
-👑 Premium режим | ${primaryLang.flag} ↔ ${secondaryLang.flag}
+🌍 Перекладач працює як Mini App у Telegram.
 
-🎤 Надсилайте голосові або відкрийте Voice Translator:`;
+👇 Натисніть кнопку нижче, щоб відкрити Voice Translator:`;
 
-          keyboard = {
+      const keyboard = isHttps
+        ? {
             inline_keyboard: [
               [
-                voiceTranslatorBtn
-              ],
+                { text: '🎤 Відкрити Voice Translator', web_app: { url: `${webappUrl}/webapp/index.html` } }
+              ]
+            ]
+          }
+        : {
+            inline_keyboard: [
               [
-                {
-                  text: '⚙️ Змінити мови',
-                  callback_data: 'open_settings'
-                },
-                {
-                  text: '📊 Мої ліміти',
-                  callback_data: 'show_limits'
-                }
+                { text: '🎤 Voice Translator (/voice)', callback_data: 'show_help' }
               ]
             ]
           };
-        } else {
-          // Free user - show language selection buttons
-          welcomeMessage = `🤖 Привіт, ${userName}!
-
-🆓 Безкоштовний режим | ${primaryLang.flag} ↔ ${secondaryLang.flag}
-
-🎤 Відкрийте Voice Translator або оберіть мову диктування:`;
-
-          keyboard = {
-            inline_keyboard: [
-              [
-                voiceTranslatorBtn
-              ],
-              [
-                {
-                  text: `🎤 Диктувати ${primaryLang.flag}`,
-                  callback_data: `set_voice_lang_${user.languages.primaryLanguage}`
-                },
-                {
-                  text: `🎤 Диктувати ${secondaryLang.flag}`,
-                  callback_data: `set_voice_lang_${user.languages.secondaryLanguage}`
-                }
-              ],
-              [
-                {
-                  text: '⚙️ Змінити мови',
-                  callback_data: 'open_settings'
-                },
-                {
-                  text: '📊 Мої ліміти',
-                  callback_data: 'show_limits'
-                }
-              ]
-            ]
-          };
-        }
-      } else {
-        // User needs to configure languages
-        welcomeMessage = `🤖 Привіт, ${userName}!
-
-Я Voice Translator — перекладаю голосові повідомлення в реальному часі.
-
-⚙️ Спочатку налаштуйте дві мови:`;
-
-        keyboard = {
-          inline_keyboard: [
-            [
-              voiceTranslatorBtn
-            ],
-            [
-              {
-                text: '⚙️ Налаштувати мови',
-                callback_data: 'open_settings'
-              }
-            ]
-          ]
-        };
-      }
 
       await ctx.reply(welcomeMessage, {
         reply_markup: keyboard

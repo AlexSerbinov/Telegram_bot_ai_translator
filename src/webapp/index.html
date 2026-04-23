@@ -57,15 +57,15 @@
       align-items: center;
       justify-content: center;
       gap: 28px;
-      margin-bottom: 24px;
+      margin-bottom: 0;
     }
 
     .flag-badge {
-      width: 86px;
-      height: 86px;
-      background: var(--card);
+      width: 92px;
+      height: 92px;
+      background: linear-gradient(145deg, #ffffff 0%, #f6f4f1 100%);
       border: none;
-      border-radius: var(--radius-badge);
+      border-radius: 26px;
       box-shadow: var(--shadow-sm);
       display: flex;
       align-items: center;
@@ -76,18 +76,57 @@
       outline: none;
       -webkit-user-select: none;
       user-select: none;
+      color: var(--badge-accent, #2f73da);
+      --badge-accent: #2f73da;
+      --badge-accent-soft: rgba(47, 115, 218, 0.2);
     }
 
     .flag-badge:active { transform: scale(0.93); }
 
-    .flag-badge .flag-emoji {
-      font-size: 44px;
+    .flag-badge.primary-tone {
+      --badge-accent: #2f73da;
+      --badge-accent-soft: rgba(47, 115, 218, 0.2);
+    }
+
+    .flag-badge.secondary-tone {
+      --badge-accent: #c54646;
+      --badge-accent-soft: rgba(197, 70, 70, 0.2);
+    }
+
+    .flag-badge .flag-mic-icon {
+      width: 52px;
+      height: 52px;
+      color: inherit;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.06));
+      pointer-events: none;
+    }
+
+    .flag-badge .flag-chip {
+      position: absolute;
+      right: 10px;
+      bottom: 8px;
+      min-width: 26px;
+      height: 26px;
+      padding: 0 5px;
+      background: #ffffff;
+      border: 1px solid rgba(26, 26, 26, 0.06);
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
       line-height: 1;
+      box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
       pointer-events: none;
     }
 
     .flag-badge.recording {
-      box-shadow: 0 0 0 3px var(--recording), var(--shadow-md);
+      box-shadow: 0 0 0 3px var(--badge-accent), var(--shadow-md);
       animation: badge-pulse 1.5s ease-in-out infinite;
     }
 
@@ -98,8 +137,8 @@
     }
 
     @keyframes badge-pulse {
-      0%, 100% { box-shadow: 0 0 0 3px var(--recording), var(--shadow-md); }
-      50% { box-shadow: 0 0 0 7px rgba(229, 57, 53, 0.15), var(--shadow-md); }
+      0%, 100% { box-shadow: 0 0 0 3px var(--badge-accent), var(--shadow-md); }
+      50% { box-shadow: 0 0 0 8px var(--badge-accent-soft), var(--shadow-md); }
     }
 
     /* ===== Content Card ===== */
@@ -115,6 +154,12 @@
       margin-bottom: 20px;
       position: relative;
     }
+    .content-card.result-layout .source-section,
+    .content-card.result-layout .target-section {
+      flex: 0 0 auto;
+      min-height: 0;
+      overflow-y: visible;
+    }
 
     .source-section, .target-section {
       flex: 1;
@@ -129,6 +174,33 @@
       background: var(--divider);
       margin: 18px 0;
       flex-shrink: 0;
+      border: none;
+      padding: 0;
+      cursor: default;
+      display: block;
+      width: 100%;
+    }
+    .translate-btn-label { display: none; }
+    .card-divider.translate-active {
+      height: auto;
+      background: var(--accent);
+      border-radius: 12px;
+      padding: 10px 0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card-divider.translate-active:active {
+      transform: scale(0.97);
+      opacity: 0.85;
+    }
+    .card-divider.translate-active .translate-btn-label {
+      display: block;
+      font-size: 15px;
+      font-weight: 600;
+      color: #ffffff;
+      letter-spacing: 0.2px;
     }
 
     .lang-name {
@@ -152,7 +224,7 @@
       transition: font-size 0.15s ease;
     }
 
-    .text-display.hint {
+    .text-display .hint {
       font-size: 16px;
       font-weight: 400;
       color: var(--text-hint);
@@ -168,6 +240,43 @@
       color: var(--text-secondary);
       font-weight: 400;
       font-style: italic;
+    }
+
+    /* Editable textarea (hidden by default, shown in result state) */
+    .text-edit {
+      display: none;
+      flex: 0 0 auto;
+      width: 100%;
+      font-family: inherit;
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1.25;
+      color: var(--text-primary);
+      letter-spacing: -0.3px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid var(--divider);
+      border-radius: 0;
+      outline: none;
+      resize: none;
+      padding: 0 0 4px 0;
+      margin: 0;
+      overflow-y: hidden;
+      word-break: break-word;
+      -webkit-user-select: text;
+      user-select: text;
+      min-height: 36px;
+      transition: font-size 0.15s ease, border-color 0.2s ease;
+      caret-color: var(--accent);
+    }
+    .text-edit::placeholder {
+      color: var(--text-hint);
+      font-weight: 400;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+    .text-edit:focus {
+      border-bottom-color: var(--accent);
     }
 
     .text-display.processing {
@@ -252,7 +361,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 10px;
+      gap: 0;
     }
 
     #waveform {
@@ -261,17 +370,37 @@
       display: block;
     }
 
-    .mic-indicator {
-      color: var(--text-hint);
-      transition: color 0.3s ease;
+    .record-btn {
+      width: 94px;
+      height: 94px;
+      border-radius: 999px;
+      border: none;
+      background: #ffffff;
+      color: #e06562;
+      box-shadow: var(--shadow-sm);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+      margin: 0 auto;
     }
 
-    .mic-indicator.active {
-      color: var(--recording);
-      animation: mic-pulse 1s ease-in-out infinite;
+    .record-btn svg {
+      width: 40px;
+      height: 40px;
+      stroke: currentColor;
     }
 
-    .mic-indicator svg { width: 22px; height: 22px; }
+    .record-btn:active {
+      transform: scale(0.95);
+    }
+
+    .record-btn.active {
+      color: #d44541;
+      box-shadow: 0 0 0 5px rgba(212, 69, 65, 0.16), var(--shadow-md);
+      animation: mic-pulse 1.1s ease-in-out infinite;
+    }
 
     @keyframes mic-pulse {
       0%, 100% { opacity: 1; }
@@ -311,7 +440,7 @@
       font-size: 13px;
       font-weight: 500;
       color: var(--text-hint);
-      margin: -12px 0 16px;
+      margin: 0;
       transition: opacity 0.25s ease;
     }
 
@@ -327,6 +456,45 @@
     @keyframes hint-pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.5; }
+    }
+
+    .control-dock {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .control-dock .lang-selector {
+      gap: 44px;
+    }
+
+    .flag-badge.lang-flag {
+      width: 74px;
+      height: 74px;
+      border-radius: 22px;
+      background: #ffffff;
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .flag-badge.lang-flag .flag-emoji {
+      font-size: 34px;
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    .flag-badge.lang-flag.recording {
+      box-shadow: 0 0 0 3px var(--accent), var(--shadow-sm);
+      animation: none;
+    }
+
+    .lang-role {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-hint);
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
     }
 
     /* ===== Language Column (flag + label) ===== */
@@ -498,29 +666,6 @@
     <div id="mainContent" style="display:none">
       <div class="app-title">Voice Translator</div>
 
-      <!-- Flag selector -->
-      <div class="lang-selector">
-        <div class="lang-col">
-          <button class="flag-badge" id="btnPrimary" onclick="handleLangClick('primary')">
-            <span class="flag-emoji" id="primaryFlag"></span>
-          </button>
-          <button class="lang-pick-btn" id="pickPrimary" onclick="openLangPicker('primary')">
-            <span id="primaryLabel"></span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-          </button>
-        </div>
-
-        <div class="lang-col">
-          <button class="flag-badge" id="btnSecondary" onclick="handleLangClick('secondary')">
-            <span class="flag-emoji" id="secondaryFlag"></span>
-          </button>
-          <button class="lang-pick-btn" id="pickSecondary" onclick="openLangPicker('secondary')">
-            <span id="secondaryLabel"></span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-          </button>
-        </div>
-      </div>
-
       <!-- Bottom sheet for language picker -->
       <div class="sheet-overlay" id="sheetOverlay" onclick="closeLangPicker()"></div>
       <div class="lang-sheet" id="langSheet">
@@ -529,23 +674,24 @@
         <div id="langList"></div>
       </div>
 
-      <!-- Tap hint -->
-      <div class="tap-hint" id="tapHint">Натисніть на прапор і говоріть</div>
-
       <!-- Content Card -->
-      <div class="content-card">
-        <div class="source-section">
+      <div class="content-card" id="contentCard">
+        <div class="source-section" id="sourceSection">
           <div class="lang-name" id="sourceLang"></div>
           <div class="text-display" id="sourceText">
-            <span class="hint">Натисніть на прапор та говоріть</span>
+            <span class="hint">Натисніть на мікрофон і надиктуйте повідомлення або почніть писати</span>
           </div>
+          <textarea class="text-edit" id="sourceEdit" rows="1" placeholder="Введіть текст..." spellcheck="false" autocorrect="off" autocomplete="off" autocapitalize="off"></textarea>
         </div>
 
-        <div class="card-divider"></div>
+        <button class="card-divider" id="translateBtn" type="button">
+          <span class="translate-btn-label">Перекласти</span>
+        </button>
 
-        <div class="target-section">
+        <div class="target-section" id="targetSection">
           <div class="lang-name" id="targetLang"></div>
           <div class="text-display" id="targetText"></div>
+          <textarea class="text-edit" id="targetEdit" rows="1" spellcheck="false" autocorrect="off" autocomplete="off" autocapitalize="off"></textarea>
           <div class="action-row" id="actionRow">
             <button class="action-btn" id="speakBtn" onclick="speakTranslation()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -567,13 +713,45 @@
       <!-- Waveform -->
       <div class="wave-section">
         <canvas id="waveform"></canvas>
-        <div class="mic-indicator" id="micIndicator">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-            <line x1="12" y1="19" x2="12" y2="23"/>
+      </div>
+
+      <div class="control-dock">
+        <button class="record-btn" id="recordBtn" type="button" onclick="handleMicClick()">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="8" y="3" width="8" height="11" rx="4"></rect>
+            <path d="M6.2 11.2v0.9a5.8 5.8 0 0 0 11.6 0v-0.9"></path>
+            <line x1="12" y1="18" x2="12" y2="21"></line>
+            <line x1="8.8" y1="21" x2="15.2" y2="21"></line>
           </svg>
+        </button>
+
+        <!-- Flag selector -->
+        <div class="lang-selector">
+          <div class="lang-col">
+            <button class="flag-badge lang-flag" id="btnPrimary" onclick="openLangPicker('primary')">
+              <span class="flag-emoji" id="primaryFlag"></span>
+            </button>
+            <button class="lang-pick-btn" id="pickPrimary" onclick="openLangPicker('primary')">
+              <span id="primaryLabel"></span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="lang-role">Звідки</div>
+          </div>
+
+          <div class="lang-col">
+            <button class="flag-badge lang-flag" id="btnSecondary" onclick="openLangPicker('secondary')">
+              <span class="flag-emoji" id="secondaryFlag"></span>
+            </button>
+            <button class="lang-pick-btn" id="pickSecondary" onclick="openLangPicker('secondary')">
+              <span id="secondaryLabel"></span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="lang-role">Куди</div>
+          </div>
         </div>
+
+        <!-- Tap hint -->
+        <div class="tap-hint" id="tapHint">Натисніть на мікрофон і надиктуйте повідомлення або почніть писати</div>
       </div>
     </div>
 
@@ -644,7 +822,7 @@
     }
 
     // ===== ElevenLabs lang map =====
-    const LANG_MAP = { uk: 'ukr', en: 'eng', es: 'spa', ka: 'kat', id: 'ind', ru: 'rus' };
+    const LANG_MAP = { uk: 'ukr', en: 'eng', es: 'spa', ka: 'kat', id: 'ind', ru: 'rus', hu: 'hun' };
 
     // ===== Soniox Client (lazy-loaded) =====
     let sonioxClient = null;
@@ -667,12 +845,31 @@
     let sttProvider = 'soniox'; // set from server config
     let state = 'idle';
     let userConfig = null;
-    let activeLang = null;    // 'primary' | 'secondary'
     let currentSource = null; // language code of source
     let currentTarget = null; // language code of target
     let finalText = '';
     let partialText = '';
     let sttAccumulated = '';  // full accumulated text (merges Soniox sliding window)
+    const LIVE_TRANSLATE_CHUNK_WORDS = 1;
+    const LIVE_TRANSLATE_DEBOUNCE_MS = 350;
+    const LIVE_TRANSLATE_MIN_INTERVAL_MS = 500;
+    const LIVE_TRANSLATE_MIN_CHARS = 1;
+
+    const liveTranslation = {
+      sessionId: 0,
+      debounceTimer: null,
+      inFlight: false,
+      inFlightSessionId: 0,
+      queuedText: '',
+      queuedForce: false,
+      queuedSessionId: 0,
+      lastRequestAt: 0,
+      lastRequestedText: '',
+      lastTranslatedText: '',
+      lastTranslation: '',
+      lastWordCheckpoint: 0
+    };
+    let sttSessionId = 0;
 
     // Audio / WebSocket
     let mediaStream = null;
@@ -704,7 +901,7 @@
     const $speakLabel = document.getElementById('speakLabel');
     const $copyBtn = document.getElementById('copyBtn');
     const $copyLabel = document.getElementById('copyLabel');
-    const $micIndicator = document.getElementById('micIndicator');
+    const $recordBtn = document.getElementById('recordBtn');
     const $errorToast = document.getElementById('errorToast');
     const $primaryLabel = document.getElementById('primaryLabel');
     const $secondaryLabel = document.getElementById('secondaryLabel');
@@ -712,15 +909,289 @@
     const $sheetOverlay = document.getElementById('sheetOverlay');
     const $langSheet = document.getElementById('langSheet');
     const $langList = document.getElementById('langList');
+    const $contentCard = document.getElementById('contentCard');
+    const $sourceSection = document.getElementById('sourceSection');
+    const $targetSection = document.getElementById('targetSection');
+    const $sourceEdit = document.getElementById('sourceEdit');
+    const $targetEdit = document.getElementById('targetEdit');
+    const $translateBtn = document.getElementById('translateBtn');
 
     // TTS state
     let ttsAudio = null;
     let ttsPlaying = false;
     let ttsCachedText = null;
+    let lastTranslatedSourceText = '';
 
     function clearSpeakSpinner() {
       const sp = $speakBtn.querySelector('.btn-spinner');
       if (sp) sp.remove();
+    }
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function beginSttSession() {
+      sttSessionId += 1;
+      return sttSessionId;
+    }
+
+    function invalidateSttSession() {
+      sttSessionId += 1;
+    }
+
+    function isCurrentSttSession(sessionId) {
+      return sessionId === sttSessionId;
+    }
+
+    function setCurrentDirection(sourceLanguage, targetLanguage) {
+      currentSource = sourceLanguage;
+      currentTarget = targetLanguage;
+      renderUI();
+    }
+
+    function resetTranscriptForNewSpeaker() {
+      finalText = '';
+      partialText = '';
+      sttAccumulated = '';
+      lastTranslatedSourceText = '';
+      $sourceEdit.value = '';
+      $targetEdit.value = '';
+      updateTranslateBtnVisibility();
+      startLiveTranslationSession();
+    }
+
+    async function stopActiveRecognition() {
+      invalidateSttSession();
+      if (sttProvider === 'soniox' && sonioxClient) {
+        const clientRef = sonioxClient;
+        let timedOut = false;
+        try {
+          await Promise.race([
+            clientRef.stop().catch(() => {}),
+            sleep(700).then(() => { timedOut = true; })
+          ]);
+        } catch (e) {}
+        if (timedOut && sonioxClient === clientRef) {
+          // Drop stale client to avoid stop/start race side-effects.
+          sonioxClient = null;
+        }
+      }
+      cleanup();
+    }
+
+    function countWords(text) {
+      const normalized = (text || '').trim();
+      if (!normalized) return 0;
+      return normalized.split(/\s+/).length;
+    }
+
+    function getTranscriptText() {
+      return (finalText + (partialText ? ' ' + partialText : '')).trim();
+    }
+
+    function startLiveTranslationSession() {
+      liveTranslation.sessionId += 1;
+      if (liveTranslation.debounceTimer) {
+        clearTimeout(liveTranslation.debounceTimer);
+        liveTranslation.debounceTimer = null;
+      }
+      liveTranslation.queuedText = '';
+      liveTranslation.queuedForce = false;
+      liveTranslation.queuedSessionId = liveTranslation.sessionId;
+      liveTranslation.lastRequestAt = 0;
+      liveTranslation.lastRequestedText = '';
+      liveTranslation.lastTranslatedText = '';
+      liveTranslation.lastTranslation = '';
+      liveTranslation.lastWordCheckpoint = 0;
+    }
+
+    function renderLivePlaceholder() {
+      $targetText.textContent = '';
+      $targetText.className = 'text-display';
+    }
+
+    function renderLiveTranslationPending() {
+      if (state !== 'recording') return;
+      if (liveTranslation.lastTranslation) return;
+      $targetText.innerHTML = '<div class="processing"><div class="spinner"></div>Перекладаю наживо...</div>';
+      $targetText.className = 'text-display';
+    }
+
+    function renderLiveTranslation(translation) {
+      if (!translation) return;
+      $targetText.textContent = translation;
+      $targetText.className = 'text-display';
+      adaptFontSize($targetText, translation);
+    }
+
+    function applyDetectedDirection(detectedLanguage, targetLanguage) {
+      if (!detectedLanguage || !targetLanguage) return;
+      if (detectedLanguage === currentSource && targetLanguage === currentTarget) return;
+      setCurrentDirection(detectedLanguage, targetLanguage);
+    }
+
+    async function translateRequest(text) {
+      const res = await fetch('/api/translate-auto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          primaryLanguage: userConfig.primaryLanguage,
+          secondaryLanguage: userConfig.secondaryLanguage
+        })
+      });
+      if (!res.ok) throw new Error('Помилка перекладу');
+      const data = await res.json();
+      applyDetectedDirection(data.detectedLanguage, data.targetLanguage);
+      return data;
+    }
+
+    async function drainLiveTranslationQueue() {
+      if (liveTranslation.inFlight || !liveTranslation.queuedText) return;
+
+      const text = liveTranslation.queuedText;
+      const force = liveTranslation.queuedForce;
+      const sessionId = liveTranslation.queuedSessionId;
+
+      if (sessionId !== liveTranslation.sessionId) {
+        liveTranslation.queuedText = '';
+        liveTranslation.queuedForce = false;
+        return;
+      }
+
+      const elapsed = Date.now() - liveTranslation.lastRequestAt;
+      if (!force && elapsed < LIVE_TRANSLATE_MIN_INTERVAL_MS) {
+        if (!liveTranslation.debounceTimer) {
+          liveTranslation.debounceTimer = setTimeout(() => {
+            liveTranslation.debounceTimer = null;
+            void drainLiveTranslationQueue();
+          }, LIVE_TRANSLATE_MIN_INTERVAL_MS - elapsed);
+        }
+        return;
+      }
+
+      liveTranslation.queuedText = '';
+      liveTranslation.queuedForce = false;
+      liveTranslation.inFlight = true;
+      liveTranslation.inFlightSessionId = sessionId;
+      liveTranslation.lastRequestAt = Date.now();
+      liveTranslation.lastRequestedText = text;
+
+      renderLiveTranslationPending();
+
+      try {
+        const data = await translateRequest(text);
+        const translation = data.translation;
+
+        if (sessionId !== liveTranslation.sessionId) return;
+
+        liveTranslation.lastTranslatedText = text;
+        liveTranslation.lastTranslation = translation;
+        liveTranslation.lastWordCheckpoint = countWords(text);
+
+        if (state === 'recording') {
+          renderLiveTranslation(translation);
+        }
+      } catch (error) {
+        if (sessionId === liveTranslation.sessionId && force) {
+          showError(error.message || 'Помилка перекладу');
+        }
+      } finally {
+        liveTranslation.inFlight = false;
+        liveTranslation.inFlightSessionId = 0;
+        if (liveTranslation.queuedText) {
+          void drainLiveTranslationQueue();
+        }
+      }
+    }
+
+    function queueLiveTranslation(text, { force = false, sessionId = liveTranslation.sessionId } = {}) {
+      const normalized = (text || '').trim();
+      if (!normalized) return;
+      if (sessionId !== liveTranslation.sessionId) return;
+      if (!force && normalized === liveTranslation.lastRequestedText) return;
+
+      liveTranslation.queuedText = normalized;
+      liveTranslation.queuedForce = liveTranslation.queuedForce || force;
+      liveTranslation.queuedSessionId = sessionId;
+
+      if (force) {
+        if (liveTranslation.debounceTimer) {
+          clearTimeout(liveTranslation.debounceTimer);
+          liveTranslation.debounceTimer = null;
+        }
+        void drainLiveTranslationQueue();
+        return;
+      }
+
+      if (!liveTranslation.debounceTimer) {
+        liveTranslation.debounceTimer = setTimeout(() => {
+          liveTranslation.debounceTimer = null;
+          void drainLiveTranslationQueue();
+        }, LIVE_TRANSLATE_DEBOUNCE_MS);
+      }
+    }
+
+    function maybeQueueLiveTranslation() {
+      if (state !== 'recording') return;
+
+      const text = getTranscriptText();
+      if (!text || text.length < LIVE_TRANSLATE_MIN_CHARS) return;
+
+      const words = countWords(text);
+      if (words < LIVE_TRANSLATE_CHUNK_WORDS) return;
+
+      const wordsDelta = words - liveTranslation.lastWordCheckpoint;
+      const charsDelta = Math.max(0, text.length - liveTranslation.lastRequestedText.length);
+      const shortened = liveTranslation.lastRequestedText && text.length + 8 < liveTranslation.lastRequestedText.length;
+
+      if (shortened || wordsDelta >= LIVE_TRANSLATE_CHUNK_WORDS || charsDelta >= 3) {
+        queueLiveTranslation(text);
+      }
+    }
+
+    async function waitForLiveQueueToDrain(sessionId, timeoutMs = 12000) {
+      const startedAt = Date.now();
+
+      while (Date.now() - startedAt < timeoutMs) {
+        const hasQueued = liveTranslation.queuedText && liveTranslation.queuedSessionId === sessionId;
+        const inFlight = liveTranslation.inFlight && liveTranslation.inFlightSessionId === sessionId;
+        if (!hasQueued && !inFlight) return;
+        await new Promise(resolve => setTimeout(resolve, 60));
+      }
+    }
+
+    async function ensureFinalLiveTranslation(text) {
+      const normalized = (text || '').trim();
+      if (!normalized) return '';
+
+      const sessionId = liveTranslation.sessionId;
+      if (
+        liveTranslation.lastTranslatedText === normalized &&
+        liveTranslation.lastTranslation
+      ) {
+        return liveTranslation.lastTranslation;
+      }
+
+      queueLiveTranslation(normalized, { force: true, sessionId });
+      await waitForLiveQueueToDrain(sessionId);
+
+      if (
+        liveTranslation.lastTranslatedText === normalized &&
+        liveTranslation.lastTranslation
+      ) {
+        return liveTranslation.lastTranslation;
+      }
+
+      const fallbackData = await translateRequest(normalized);
+      const fallback = fallbackData.translation;
+      if (sessionId === liveTranslation.sessionId) {
+        liveTranslation.lastTranslatedText = normalized;
+        liveTranslation.lastTranslation = fallback;
+        liveTranslation.lastWordCheckpoint = countWords(normalized);
+      }
+      return fallback;
     }
 
     // ===== Init =====
@@ -759,15 +1230,12 @@
     }
 
     function renderUI() {
-      const pl = userConfig.languages[userConfig.primaryLanguage];
-      const sl = userConfig.languages[userConfig.secondaryLanguage];
-      $primaryFlag.textContent = pl.flag;
-      $secondaryFlag.textContent = sl.flag;
-      $primaryLabel.textContent = pl.nameUk;
-      $secondaryLabel.textContent = sl.nameUk;
-
       const src = userConfig.languages[currentSource];
       const tgt = userConfig.languages[currentTarget];
+      $primaryFlag.textContent = src.flag;
+      $secondaryFlag.textContent = tgt.flag;
+      $primaryLabel.textContent = src.nameUk;
+      $secondaryLabel.textContent = tgt.nameUk;
       $sourceLang.textContent = src.nameUk;
       $targetLang.textContent = tgt.nameUk;
     }
@@ -779,7 +1247,7 @@
       if (state === 'recording' || state === 'processing') return;
       pickerTarget = which;
 
-      const currentCode = which === 'primary' ? userConfig.primaryLanguage : userConfig.secondaryLanguage;
+      const currentCode = which === 'primary' ? currentSource : currentTarget;
       const allLangs = userConfig.languages;
 
       $langList.innerHTML = Object.entries(allLangs).map(([code, lang]) => `
@@ -802,17 +1270,31 @@
     function selectLanguage(code) {
       if (!pickerTarget) return;
 
-      const otherSlot = pickerTarget === 'primary' ? 'secondaryLanguage' : 'primaryLanguage';
-      const thisSlot = pickerTarget === 'primary' ? 'primaryLanguage' : 'secondaryLanguage';
+      let nextSource = currentSource;
+      let nextTarget = currentTarget;
 
-      // If selected language is already on the other side → swap
-      if (userConfig[otherSlot] === code) {
-        userConfig[otherSlot] = userConfig[thisSlot];
+      if (pickerTarget === 'primary') {
+        if (code === currentTarget) {
+          nextSource = currentTarget;
+          nextTarget = currentSource;
+        } else {
+          nextSource = code;
+        }
+      } else {
+        if (code === currentSource) {
+          nextTarget = currentSource;
+          nextSource = currentTarget;
+        } else {
+          nextTarget = code;
+        }
       }
-      userConfig[thisSlot] = code;
 
-      currentSource = userConfig.primaryLanguage;
-      currentTarget = userConfig.secondaryLanguage;
+      if (nextSource === nextTarget) return;
+
+      currentSource = nextSource;
+      currentTarget = nextTarget;
+      userConfig.primaryLanguage = currentSource;
+      userConfig.secondaryLanguage = currentTarget;
 
       renderUI();
       closeLangPicker();
@@ -852,74 +1334,73 @@
       if (state !== 'recording') drawWaveform();
     });
 
-    // ===== Language click =====
-    async function handleLangClick(which) {
+    async function beginRecordingAuto() {
+      await stopActiveRecognition();
+      resetTranscriptForNewSpeaker();
+      if (!currentSource || !currentTarget || currentSource === currentTarget) {
+        setCurrentDirection(userConfig.primaryLanguage, userConfig.secondaryLanguage);
+      } else {
+        renderUI();
+      }
+      $actionRow.classList.remove('visible');
+      setState('recording');
+
+      try {
+        if (sttProvider === 'soniox') {
+          await startRecordingSoniox();
+        } else {
+          await startRecordingElevenLabs();
+        }
+      } catch (err) {
+        showError(err.name === 'NotAllowedError'
+          ? 'Дозвольте доступ до мікрофона'
+          : (err.message || 'Виникла помилка'));
+        await stopActiveRecognition();
+        setState('idle');
+      }
+    }
+
+    // ===== Mic click =====
+    async function handleMicClick() {
       if (state === 'processing') return;
+
+      // Stop any playing TTS
+      if (ttsAudio) { ttsAudio.pause(); ttsPlaying = false; }
+      ttsCachedText = null;
 
       if (state === 'recording') {
         await stopRecording();
         return;
       }
 
-      // Stop any playing TTS
-      if (ttsAudio) { ttsAudio.pause(); ttsPlaying = false; }
-      ttsCachedText = null;
-
-      activeLang = which;
-      finalText = '';
-      partialText = '';
-      sttAccumulated = '';
-
-      // Set source/target based on which flag was tapped
-      if (which === 'primary') {
-        currentSource = userConfig.primaryLanguage;
-        currentTarget = userConfig.secondaryLanguage;
-      } else {
-        currentSource = userConfig.secondaryLanguage;
-        currentTarget = userConfig.primaryLanguage;
-      }
-      renderUI();
-
-      $actionRow.classList.remove('visible');
-      setState('recording');
-
-      try {
-        if (sttProvider === 'soniox') {
-          await startRecordingSoniox(which);
-        } else {
-          await startRecordingElevenLabs(which);
-        }
-      } catch (err) {
-        showError(err.name === 'NotAllowedError'
-          ? 'Дозвольте доступ до мікрофона'
-          : (err.message || 'Виникла помилка'));
-        cleanup();
-        setState('idle');
-      }
+      await beginRecordingAuto();
     }
 
     // ===== Soniox recording =====
-    async function startRecordingSoniox(which) {
-      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    async function startRecordingSoniox() {
+      const sessionId = beginSttSession();
+      const hasActiveStream = mediaStream && mediaStream.getAudioTracks().some(track => track.readyState === 'live');
+      if (!hasActiveStream) {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
 
-      audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      sourceNode = audioContext.createMediaStreamSource(mediaStream);
-      analyserNode = audioContext.createAnalyser();
-      analyserNode.fftSize = 2048;
-      dataArray = new Uint8Array(analyserNode.frequencyBinCount);
-      sourceNode.connect(analyserNode);
+      if (!audioContext || audioContext.state === 'closed' || !sourceNode || !analyserNode) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        sourceNode = audioContext.createMediaStreamSource(mediaStream);
+        analyserNode = audioContext.createAnalyser();
+        analyserNode.fftSize = 2048;
+        dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+        sourceNode.connect(analyserNode);
+      }
       drawWaveform();
-
-      const langCode = which === 'primary'
-        ? userConfig.primaryLanguage
-        : userConfig.secondaryLanguage;
 
       const client = await getSonioxClient();
       client.start({
-        model: 'stt-rt-preview',
+        model: 'stt-rt-v4',
         stream: mediaStream,
-        languageHints: [langCode],
+        languageHints: [userConfig.primaryLanguage, userConfig.secondaryLanguage],
         onPartialResult(result) {
+          if (!isCurrentSttSession(sessionId)) return;
           // Soniox RT returns a sliding window — all tokens are partial
           // We must merge windows to accumulate the full text
           let windowText = '';
@@ -945,6 +1426,7 @@
           updateTranscript();
         },
         onError(status, message) {
+          if (!isCurrentSttSession(sessionId)) return;
           showError('Помилка розпізнавання');
           cleanup();
           setState('idle');
@@ -953,23 +1435,24 @@
     }
 
     // ===== ElevenLabs recording =====
-    async function startRecordingElevenLabs(which) {
+    async function startRecordingElevenLabs() {
+      const sessionId = beginSttSession();
       const tokenRes = await fetch('/api/token');
       if (!tokenRes.ok) throw new Error('Не вдалося отримати токен');
       const { token } = await tokenRes.json();
 
-      const langCode = which === 'primary'
-        ? userConfig.primaryLanguage
-        : userConfig.secondaryLanguage;
+      const langCode = currentSource || userConfig.primaryLanguage;
       const isoCode = LANG_MAP[langCode] || langCode;
 
       const wsUrl = `wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&language_code=${isoCode}&token=${token}`;
       ws = new WebSocket(wsUrl);
 
       ws.onopen = async () => {
+        if (!isCurrentSttSession(sessionId)) return;
         try {
           mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         } catch (micErr) {
+          if (!isCurrentSttSession(sessionId)) return;
           showError('Дозвольте доступ до мікрофона');
           cleanup();
           setState('idle');
@@ -993,6 +1476,7 @@
 
         processorNode = audioContext.createScriptProcessor(4096, 1, 1);
         processorNode.onaudioprocess = (e) => {
+          if (!isCurrentSttSession(sessionId)) return;
           if (state !== 'recording' || !ws || ws.readyState !== WebSocket.OPEN) return;
 
           let inputData = e.inputBuffer.getChannelData(0);
@@ -1016,6 +1500,7 @@
       };
 
       ws.onmessage = (event) => {
+        if (!isCurrentSttSession(sessionId)) return;
         const msg = JSON.parse(event.data);
         const msgType = msg.type || msg.message_type;
 
@@ -1034,6 +1519,7 @@
       };
 
       ws.onerror = () => {
+        if (!isCurrentSttSession(sessionId)) return;
         showError('Помилка з\'єднання');
         cleanup();
         setState('idle');
@@ -1044,12 +1530,13 @@
 
     // ===== Stop recording =====
     async function stopRecording() {
+      invalidateSttSession();
       if (sttProvider === 'soniox' && sonioxClient) {
         try { await sonioxClient.stop(); } catch(e) {}
       }
       cleanup();
 
-      const text = (finalText + (partialText ? ' ' + partialText : '')).trim();
+      const text = getTranscriptText();
 
       if (!text) {
         setState('idle');
@@ -1057,23 +1544,13 @@
         return;
       }
 
+      finalText = text;
+      partialText = '';
       setState('processing');
 
       try {
-        const res = await fetch('/api/translate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text,
-            fromLanguage: currentSource,
-            toLanguage: currentTarget
-          })
-        });
-
-        if (!res.ok) throw new Error('Помилка перекладу');
-
-        const data = await res.json();
-        showResult(text, data.translation);
+        const translation = await ensureFinalLiveTranslation(text);
+        showResult(text, translation);
         setState('result');
       } catch (err) {
         showError(err.message || 'Помилка перекладу');
@@ -1097,18 +1574,27 @@
     function setState(newState) {
       state = newState;
 
+      // Reset edit mode (skip for result — showResult() handles textarea display)
+      if (newState !== 'result') {
+        $sourceText.style.display = '';
+        $targetText.style.display = '';
+        $sourceEdit.style.display = 'none';
+        $targetEdit.style.display = 'none';
+        $translateBtn.classList.remove('translate-active');
+        $contentCard.classList.remove('result-layout');
+      }
+
       $btnPrimary.classList.remove('recording', 'dimmed');
       $btnSecondary.classList.remove('recording', 'dimmed');
-      $micIndicator.classList.remove('active');
+      $recordBtn.classList.remove('active');
 
       // Update tap hint per state
       $tapHint.classList.remove('cta');
       if (newState === 'idle') {
-        $tapHint.textContent = 'Натисніть на прапор і говоріть';
+        $tapHint.textContent = 'Натисніть на мікрофон і надиктуйте повідомлення або почніть писати';
         $tapHint.classList.remove('hidden');
       } else if (newState === 'recording') {
-        const recFlag = userConfig.languages[currentSource].flag;
-        $tapHint.textContent = `Натисніть ${recFlag} для перекладу`;
+        $tapHint.textContent = 'Натисніть мікрофон, щоб завершити диктування';
         $tapHint.classList.remove('hidden');
         $tapHint.classList.add('cta');
       } else {
@@ -1117,23 +1603,17 @@
 
       switch (newState) {
         case 'idle':
-          $sourceText.innerHTML = '<span class="hint">Натисніть на прапор та говоріть</span>';
+          $sourceText.innerHTML = '<span class="hint">Натисніть на мікрофон і надиктуйте повідомлення або почніть писати</span>';
           $targetText.textContent = '';
           $actionRow.classList.remove('visible');
           drawWaveform();
           break;
 
         case 'recording':
-          if (activeLang === 'primary') {
-            $btnPrimary.classList.add('recording');
-            $btnSecondary.classList.add('dimmed');
-          } else {
-            $btnSecondary.classList.add('recording');
-            $btnPrimary.classList.add('dimmed');
-          }
-          $micIndicator.classList.add('active');
+          $recordBtn.classList.add('active');
+          $btnPrimary.classList.add('recording');
           $sourceText.innerHTML = '<span class="partial-text">Слухаю...</span>';
-          $targetText.textContent = '';
+          renderLivePlaceholder();
           $actionRow.classList.remove('visible');
           break;
 
@@ -1164,6 +1644,24 @@
       el.style.fontSize = size + 'px';
     }
 
+    function autoResizeTextarea(ta) {
+      ta.style.height = 'auto';
+      ta.style.height = ta.scrollHeight + 'px';
+    }
+
+    function getTargetText() {
+      return $targetEdit.style.display === 'block'
+        ? $targetEdit.value.trim()
+        : $targetText.textContent.trim();
+    }
+
+    function updateTranslateBtnVisibility() {
+      const text = $sourceEdit.value.trim();
+      const hasManualChanges = text && text !== lastTranslatedSourceText;
+      const isEditingSource = $sourceEdit.style.display === 'block';
+      $translateBtn.classList.toggle('translate-active', Boolean(isEditingSource && hasManualChanges));
+    }
+
     // ===== Transcript =====
     function updateTranscript() {
       let html = '';
@@ -1180,6 +1678,8 @@
       // Auto-scroll to show latest text
       const section = $sourceText.parentElement;
       section.scrollTop = section.scrollHeight;
+
+      maybeQueueLiveTranslation();
     }
 
     // ===== Result =====
@@ -1197,11 +1697,48 @@
       $speakBtn.classList.remove('loading', 'playing');
       clearSpeakSpinner();
       $actionRow.classList.add('visible');
+
+      // Switch to editable textareas
+      $sourceText.style.display = 'none';
+      $targetText.style.display = 'none';
+
+      $sourceEdit.value = original;
+      $sourceEdit.style.display = 'block';
+      adaptFontSize($sourceEdit, original);
+      autoResizeTextarea($sourceEdit);
+
+      $targetEdit.value = translation;
+      $targetEdit.style.display = 'block';
+      adaptFontSize($targetEdit, translation);
+      autoResizeTextarea($targetEdit);
+
+      lastTranslatedSourceText = (original || '').trim();
+      updateTranslateBtnVisibility();
+      $contentCard.classList.add('result-layout');
+      $sourceSection.scrollTop = 0;
+      $targetSection.scrollTop = 0;
+      ttsCachedText = null;
+    }
+
+    // ===== Re-translate =====
+    async function handleTranslateBtn() {
+      const text = $sourceEdit.value.trim();
+      if (!text) return;
+      finalText = text;
+      setState('processing');
+      try {
+        const data = await translateRequest(text);
+        showResult(text, data.translation);
+        setState('result');
+      } catch (err) {
+        showError(err.message || 'Помилка перекладу');
+        setState('idle');
+      }
     }
 
     // ===== Copy =====
     function copyTranslation() {
-      const text = $targetText.textContent;
+      const text = getTargetText();
       if (!text) return;
 
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1232,7 +1769,7 @@
 
     // ===== TTS =====
     async function speakTranslation() {
-      const text = $targetText.textContent;
+      const text = getTargetText();
       if (!text) return;
 
       // If already playing, stop
@@ -1397,6 +1934,33 @@
       d.textContent = text;
       return d.innerHTML;
     }
+
+    // ===== Edit mode listeners =====
+    $sourceEdit.addEventListener('input', () => {
+      adaptFontSize($sourceEdit, $sourceEdit.value);
+      autoResizeTextarea($sourceEdit);
+      updateTranslateBtnVisibility();
+    });
+    $targetEdit.addEventListener('input', () => {
+      adaptFontSize($targetEdit, $targetEdit.value);
+      autoResizeTextarea($targetEdit);
+      ttsCachedText = null;
+    });
+    $translateBtn.addEventListener('click', handleTranslateBtn);
+    // Enter = newline (no translation trigger)
+
+    // Idle tap-to-type
+    $sourceSection.addEventListener('click', (e) => {
+      if (state !== 'idle') return;
+      if (e.target.closest('.lang-name')) return;
+      $sourceText.style.display = 'none';
+      $sourceEdit.value = '';
+      $sourceEdit.style.display = 'block';
+      lastTranslatedSourceText = '';
+      updateTranslateBtnVisibility();
+      $sourceEdit.focus();
+      $tapHint.classList.add('hidden');
+    });
 
     // ===== Start =====
     init();
