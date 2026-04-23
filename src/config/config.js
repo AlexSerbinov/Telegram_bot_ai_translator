@@ -20,7 +20,7 @@ const config = {
     apiKey: process.env.ELEVEN_LABS_API_KEY,
     models: {
       stt: 'scribe_v2',
-      tts: 'eleven_multilingual_v2'
+      tts: 'eleven_turbo_v2_5'
     },
     ttsVoice: process.env.ELEVEN_LABS_TTS_VOICE || 'FFHOCNsj5TuX6tRgEswC' // Adam (deep male)
   },
