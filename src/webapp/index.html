@@ -489,6 +489,27 @@
       animation: none;
     }
 
+    .lang-swap-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      border: none;
+      background: #ffffff;
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s;
+      align-self: center;
+      margin-top: -22px;
+    }
+    .lang-swap-btn svg { width: 22px; height: 22px; }
+    .lang-swap-btn:active { background: var(--divider); transform: rotate(180deg); }
+    .lang-swap-btn.swapping { transform: rotate(180deg); }
+
     .lang-role {
       font-size: 10px;
       font-weight: 700;
@@ -737,6 +758,13 @@
             </button>
             <div class="lang-role">Звідки</div>
           </div>
+
+          <button class="lang-swap-btn" id="langSwapBtn" onclick="swapLanguages()" aria-label="Поміняти мови місцями">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M7 7h12l-3-3"/>
+              <path d="M17 17H5l3 3"/>
+            </svg>
+          </button>
 
           <div class="lang-col">
             <button class="flag-badge lang-flag" id="btnSecondary" onclick="openLangPicker('secondary')">
@@ -1300,6 +1328,36 @@
       closeLangPicker();
 
       // Save to server
+      if (telegramId) {
+        fetch(`/api/user/${telegramId}/languages`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            primaryLanguage: userConfig.primaryLanguage,
+            secondaryLanguage: userConfig.secondaryLanguage
+          })
+        }).catch(() => showError('Не вдалося зберегти мову'));
+      }
+    }
+
+    function swapLanguages() {
+      if (!currentSource || !currentTarget || currentSource === currentTarget) return;
+      const newSource = currentTarget;
+      const newTarget = currentSource;
+      currentSource = newSource;
+      currentTarget = newTarget;
+      userConfig.primaryLanguage = currentSource;
+      userConfig.secondaryLanguage = currentTarget;
+
+      const $swap = document.getElementById('langSwapBtn');
+      if ($swap) {
+        $swap.classList.add('swapping');
+        setTimeout(() => $swap.classList.remove('swapping'), 280);
+      }
+
+      ttsCachedText = null;
+      renderUI();
+
       if (telegramId) {
         fetch(`/api/user/${telegramId}/languages`, {
           method: 'PUT',
