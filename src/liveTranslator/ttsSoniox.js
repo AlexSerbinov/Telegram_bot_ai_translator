@@ -2,13 +2,14 @@
  * Persistent Soniox TTS WebSocket session — alternative provider to ttsEleven.js.
  *
  * Soniox TTS is a *multi-stream* protocol: one WS connection can host many
- * concurrent or sequential streams, each with its own stream_id. There is NO
- * persistent "input stream" the way ElevenLabs streaming-input has. Each
- * synthesis request must:
- *   1. Send a config (api_key + stream_id + model + voice + ...) to open a sub-stream
- *   2. Send text + text_end:true on that same stream_id
- *   3. Server returns audio frames + a final { terminated:true } for that stream_id
- * The connection stays open and we open a fresh sub-stream per chunk().
+ * sub-streams keyed by stream_id. Each chunk() opens a fresh sub-stream
+ * (config + text + text_end:true), the server returns audio frames tagged
+ * with that stream_id, and a final { terminated:true } closes it.
+ *
+ * IMPORTANT — sub-streams are SERIALIZED in this implementation. We open the
+ * next sub-stream only after the previous one's `terminated:true` arrives.
+ * Without serialization, audio frames from concurrent sub-streams interleave
+ * on the WS and the listener hears voices cutting each other off mid-word.
  *
  * Endpoint: wss://tts-rt.soniox.com/tts-websocket
  * Voice "Maya" (or any of the 12 Soniox voices) is inherently multilingual; we
@@ -33,23 +34,22 @@ class SonioxTtsSession extends EventEmitter {
     this.language = language;
     this.ws = null;
     this.ready = false;
-    this.pending = [];                        // chunks queued before WS handshake done
-    this.startTsByStream = new Map();         // stream_id → ts of opening (for first-byte)
-    this.firstByteSentByStream = new Set();   // streams whose first-byte has been emitted
+    this.queue = [];                          // pending text chunks awaiting synthesis
+    this.activeStreamId = null;               // currently-streaming sub-stream's id
+    this.activeStreamStartTs = 0;
+    this.firstByteSent = false;
     this.closed = false;
   }
 
   open() {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const ws = new WebSocket(URL);
       this.ws = ws;
 
       ws.on('open', () => {
         if (this.closed) { try { ws.close(); } catch {} return; }
         this.ready = true;
-        // Flush any chunks that arrived during handshake
-        for (const t of this.pending) this._openSubStream(t);
-        this.pending = [];
+        this._drain();
         resolve();
       });
 
@@ -60,46 +60,60 @@ class SonioxTtsSession extends EventEmitter {
 
         if (payload.error_code || payload.error_message) {
           this.emit('error', { message: `${payload.error_code || ''}: ${payload.error_message || JSON.stringify(payload)}` });
+          // Advance — don't deadlock the queue on a single failure.
+          if (payload.stream_id && payload.stream_id === this.activeStreamId) {
+            this.activeStreamId = null;
+            this._drain();
+          }
           return;
         }
 
+        // Drop frames from any stream that isn't the currently-active one. In practice this
+        // shouldn't happen because we serialize, but guard against late frames after errors.
+        if (payload.stream_id && payload.stream_id !== this.activeStreamId) return;
+
         if (payload.audio) {
-          const buf = Buffer.from(payload.audio, 'base64');
-          const sid = payload.stream_id;
-          const startTs = sid ? this.startTsByStream.get(sid) : null;
-          if (startTs && sid && !this.firstByteSentByStream.has(sid)) {
-            const latencyMs = Date.now() - startTs;
-            this.emit('first-byte', { latencyMs });
-            this.firstByteSentByStream.add(sid);
+          if (!this.firstByteSent && this.activeStreamStartTs) {
+            this.emit('first-byte', { latencyMs: Date.now() - this.activeStreamStartTs });
+            this.firstByteSent = true;
           }
-          this.emit('audio', buf);
+          this.emit('audio', Buffer.from(payload.audio, 'base64'));
         }
 
-        if (payload.terminated && payload.stream_id) {
-          this.startTsByStream.delete(payload.stream_id);
-          this.firstByteSentByStream.delete(payload.stream_id);
+        if (payload.terminated) {
+          this.activeStreamId = null;
+          this._drain();
         }
       });
 
       ws.on('error', (err) => this.emit('error', { message: err.message }));
-      ws.on('close', () => { this.ready = false; this.emit('closed'); });
+      ws.on('close', () => {
+        this.ready = false;
+        this.activeStreamId = null;
+        this.queue = [];
+        this.emit('closed');
+      });
     });
   }
 
-  /**
-   * Synthesize one text chunk as a fresh Soniox sub-stream.
-   * Stream_id is unique per chunk; many can be in flight concurrently.
-   */
+  /** Queue a text chunk. Synthesis is serialized — frames stay in order. */
   chunk(text) {
     const trimmed = (text || '').trim();
     if (!trimmed || this.closed) return;
-    if (!this.ready) { this.pending.push(trimmed); return; }
-    this._openSubStream(trimmed);
+    this.queue.push(trimmed);
+    this._drain();
   }
 
-  _openSubStream(text) {
+  /** Pull next chunk off the queue and open a sub-stream for it. No-op while one is active. */
+  _drain() {
+    if (!this.ready || this.activeStreamId || this.closed) return;
+    const text = this.queue.shift();
+    if (!text) return;
+
     const streamId = 'live-' + Date.now().toString(36) + '-' + crypto.randomBytes(3).toString('hex');
-    this.startTsByStream.set(streamId, Date.now());
+    this.activeStreamId = streamId;
+    this.activeStreamStartTs = Date.now();
+    this.firstByteSent = false;
 
     try {
       // 1) config (= "start") for this sub-stream
@@ -120,6 +134,9 @@ class SonioxTtsSession extends EventEmitter {
       }));
     } catch (e) {
       this.emit('error', { message: 'sub-stream send: ' + e.message });
+      this.activeStreamId = null;
+      // Try to keep the queue moving despite this failure.
+      this._drain();
     }
   }
 
@@ -129,6 +146,7 @@ class SonioxTtsSession extends EventEmitter {
   close() {
     if (this.closed) return;
     this.closed = true;
+    this.queue = [];
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try { this.ws.close(); } catch {}
     }
