@@ -11,7 +11,10 @@
 const WebSocket = require('ws');
 const { LiveTranslatorSession } = require('./session');
 
-function attachLiveWs({ groqApiKey, sonioxApiKey, elevenApiKey, elevenVoiceId, logger = console }) {
+function attachLiveWs({
+  groqApiKey, sonioxApiKey, sonioxTtsApiKey, sonioxTtsVoice,
+  elevenApiKey, elevenVoiceId, defaultTtsProvider, logger = console,
+}) {
   if (!groqApiKey || !sonioxApiKey || !elevenApiKey || !elevenVoiceId) {
     throw new Error('attachLiveWs: missing required API keys (groq/soniox/eleven/voiceId)');
   }
@@ -20,7 +23,10 @@ function attachLiveWs({ groqApiKey, sonioxApiKey, elevenApiKey, elevenVoiceId, l
 
   wss.on('connection', (clientWs) => {
     logger.info('[Live] client connected');
-    const session = new LiveTranslatorSession({ groqApiKey, sonioxApiKey, elevenApiKey, elevenVoiceId });
+    const session = new LiveTranslatorSession({
+      groqApiKey, sonioxApiKey, sonioxTtsApiKey, sonioxTtsVoice,
+      elevenApiKey, elevenVoiceId, defaultTtsProvider,
+    });
 
     // Wire session events → client frames
     const safeSend = (obj) => { try { clientWs.send(JSON.stringify(obj)); } catch {} };
@@ -47,8 +53,9 @@ function attachLiveWs({ groqApiKey, sonioxApiKey, elevenApiKey, elevenVoiceId, l
               targetLang:  msg.targetLang,
               voiceSpeed:  msg.voiceSpeed,
               autoSpeedOn: msg.autoSpeed,
+              ttsProvider: msg.ttsProvider,
             });
-            safeSend({ type: 'started' });
+            safeSend({ type: 'started', ttsProvider: session.ttsProvider });
             break;
           case 'audio_b64':
             if (msg.data) session.feedAudio(Buffer.from(msg.data, 'base64'));

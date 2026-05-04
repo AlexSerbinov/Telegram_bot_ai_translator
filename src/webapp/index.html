@@ -2253,6 +2253,7 @@
       const TGT_LS = 'live.tgt';
       const SPEED_LS = 'live.speed';
       const AUTO_LS = 'live.auto';
+      const TTS_LS = 'live.tts';
 
       let state = {
         running: false, ws: null, audioCtx: null, mediaStream: null, sourceNode: null, workletNode: null,
@@ -2261,6 +2262,7 @@
         targetLang: localStorage.getItem(TGT_LS) || 'uk',
         voiceSpeed: parseFloat(localStorage.getItem(SPEED_LS) || '1.0'),
         autoSpeed: localStorage.getItem(AUTO_LS) === '1',
+        ttsProvider: localStorage.getItem(TTS_LS) || 'soniox',
         chunkCount: 0,
         srcAccumulated: '',
         srcInterim: '',
@@ -2299,6 +2301,14 @@
               <span class="arrow">→</span>
               <select id="liveTgt">${langOptions}</select>
               <button id="liveSwap" class="swap-btn" type="button" title="Swap">⇄</button>
+            </div>
+
+            <div class="live-langs">
+              <label style="font-size:12px;color:var(--text-secondary)">Voice:</label>
+              <select id="liveTtsProvider">
+                <option value="soniox">🎙 Soniox (multilingual)</option>
+                <option value="eleven">🎤 ElevenLabs Flash</option>
+              </select>
             </div>
 
             <div class="live-speed">
@@ -2341,6 +2351,7 @@
         `;
         $('liveSrc').value = state.sourceLang;
         $('liveTgt').value = state.targetLang;
+        $('liveTtsProvider').value = state.ttsProvider;
         refreshLabels();
       }
 
@@ -2359,6 +2370,11 @@
         $('liveTgt').addEventListener('change', () => {
           state.targetLang = $('liveTgt').value;
           localStorage.setItem(TGT_LS, state.targetLang); refreshLabels();
+        });
+        $('liveTtsProvider').addEventListener('change', () => {
+          state.ttsProvider = $('liveTtsProvider').value;
+          localStorage.setItem(TTS_LS, state.ttsProvider);
+          log(`[tts] provider → ${state.ttsProvider} (applies on next Start)`);
         });
         $('liveSwap').addEventListener('click', () => {
           const a = state.sourceLang, b = state.targetLang;
@@ -2410,10 +2426,11 @@
         ws.addEventListener('open', () => {
           ws.send(JSON.stringify({
             type: 'init',
-            sourceLang: state.sourceLang,
-            targetLang: state.targetLang,
-            voiceSpeed: state.voiceSpeed,
-            autoSpeed:  state.autoSpeed,
+            sourceLang:  state.sourceLang,
+            targetLang:  state.targetLang,
+            voiceSpeed:  state.voiceSpeed,
+            autoSpeed:   state.autoSpeed,
+            ttsProvider: state.ttsProvider,
           }));
           log('[ws] open, init sent');
         });

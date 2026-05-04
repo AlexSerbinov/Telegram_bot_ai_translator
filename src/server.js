@@ -445,10 +445,13 @@ function startServer() {
   // (the first listener destroys upgrades for paths it doesn't recognize).
   const wssTts = attachTtsWsProxy();
   const wssLive = attachLiveWs({
-    groqApiKey:    config.groq.apiKey,
-    sonioxApiKey:  config.soniox.apiKey,
-    elevenApiKey:  config.elevenLabs.apiKey,
-    elevenVoiceId: config.elevenLabs.ttsVoice,
+    groqApiKey:         config.groq.apiKey,
+    sonioxApiKey:       config.soniox.apiKey,
+    sonioxTtsApiKey:    config.soniox.ttsApiKey,
+    sonioxTtsVoice:     config.soniox.ttsVoice,
+    elevenApiKey:       config.elevenLabs.apiKey,
+    elevenVoiceId:      config.elevenLabs.ttsVoice,
+    defaultTtsProvider: config.liveTranslator.ttsProvider,
     logger,
   });
 

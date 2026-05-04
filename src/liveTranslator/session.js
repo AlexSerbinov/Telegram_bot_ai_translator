@@ -23,6 +23,7 @@ const { filterToScript } = require('./scriptFilter');
 const { decide } = require('./triggerPolicy');
 const { translateIncremental } = require('./translator');
 const { ElevenSession } = require('./ttsEleven');
+const { SonioxTtsSession } = require('./ttsSoniox');
 const { SonioxSession } = require('./sttSoniox');
 const autoSpeed = require('./autoSpeed');
 
@@ -31,12 +32,24 @@ const CONTEXT_CHARS = 240;
 const PUNCT_TAIL_RE = /[.,!?;:…»"”')]\s*$/;
 
 class LiveTranslatorSession extends EventEmitter {
-  constructor({ groqApiKey, sonioxApiKey, elevenApiKey, elevenVoiceId }) {
+  constructor({
+    groqApiKey,
+    sonioxApiKey,        // STT key
+    sonioxTtsApiKey,     // TTS key (may equal STT key)
+    sonioxTtsVoice = 'Maya',
+    elevenApiKey,
+    elevenVoiceId,
+    defaultTtsProvider = 'soniox',
+  }) {
     super();
-    this.groqApiKey   = groqApiKey;
-    this.sonioxApiKey = sonioxApiKey;
-    this.elevenApiKey = elevenApiKey;
-    this.elevenVoiceId = elevenVoiceId;
+    this.groqApiKey       = groqApiKey;
+    this.sonioxApiKey     = sonioxApiKey;
+    this.sonioxTtsApiKey  = sonioxTtsApiKey || sonioxApiKey;
+    this.sonioxTtsVoice   = sonioxTtsVoice;
+    this.elevenApiKey     = elevenApiKey;
+    this.elevenVoiceId    = elevenVoiceId;
+    this.defaultTtsProvider = defaultTtsProvider;
+    this.ttsProvider      = defaultTtsProvider;
 
     // Pipeline state
     this.sourceLang = 'es';
@@ -59,12 +72,15 @@ class LiveTranslatorSession extends EventEmitter {
     this.running = false;
   }
 
-  async start({ sourceLang = 'es', targetLang = 'uk', voiceSpeed = 1.0, autoSpeedOn = false }) {
+  async start({ sourceLang = 'es', targetLang = 'uk', voiceSpeed = 1.0, autoSpeedOn = false, ttsProvider } = {}) {
     if (sourceLang === targetLang) throw new Error('source and target must differ');
     this.sourceLang = sourceLang;
     this.targetLang = targetLang;
     this.voiceSpeed = clamp01(voiceSpeed);
     this.autoSpeedOn = !!autoSpeedOn;
+    this.ttsProvider = (ttsProvider === 'eleven' || ttsProvider === 'soniox')
+      ? ttsProvider
+      : this.defaultTtsProvider;
     this.accumulatedFinal = '';
     this.lastInterim = '';
     this.committedSrcLen = 0;
@@ -72,7 +88,7 @@ class LiveTranslatorSession extends EventEmitter {
     this.inFlight = false;
     this.clientQueueSec = 0;
 
-    this._log('info', `start ${sourceLang}→${targetLang} speed=${this.voiceSpeed} auto=${this.autoSpeedOn}`);
+    this._log('info', `start ${sourceLang}→${targetLang} tts=${this.ttsProvider} speed=${this.voiceSpeed} auto=${this.autoSpeedOn}`);
 
     // STT upstream
     this.stt = new SonioxSession({ apiKey: this.sonioxApiKey, sourceLang });
@@ -96,17 +112,12 @@ class LiveTranslatorSession extends EventEmitter {
     this.stt.on('closed', () => this._log('info', '[stt] upstream closed'));
     await this.stt.open();
 
-    // TTS upstream
-    this.tts = new ElevenSession({
-      apiKey: this.elevenApiKey,
-      voiceId: this.elevenVoiceId,
-      language: targetLang,
-      voiceSpeed: this.voiceSpeed,
-    });
+    // TTS upstream — provider-switchable
+    this.tts = this._buildTts(targetLang);
     this.tts.on('audio', (buf) => this.emit('tts_audio', buf));
     this.tts.on('first-byte', (m) => this.emit('tts_first_byte', m));
-    this.tts.on('error', (e) => this._log('error', `[tts] ${e.message}`));
-    this.tts.on('closed', () => this._log('info', '[tts] upstream closed'));
+    this.tts.on('error', (e) => this._log('error', `[tts:${this.ttsProvider}] ${e.message}`));
+    this.tts.on('closed', () => this._log('info', `[tts:${this.ttsProvider}] upstream closed`));
     await this.tts.open();
 
     this.running = true;
@@ -148,6 +159,22 @@ class LiveTranslatorSession extends EventEmitter {
   }
 
   // ===== internals =====
+
+  _buildTts(targetLang) {
+    if (this.ttsProvider === 'soniox') {
+      return new SonioxTtsSession({
+        apiKey:   this.sonioxTtsApiKey,
+        voice:    this.sonioxTtsVoice,
+        language: targetLang,
+      });
+    }
+    return new ElevenSession({
+      apiKey:     this.elevenApiKey,
+      voiceId:    this.elevenVoiceId,
+      language:   targetLang,
+      voiceSpeed: this.voiceSpeed,
+    });
+  }
 
   _periodic() {
     if (!this.running) return;

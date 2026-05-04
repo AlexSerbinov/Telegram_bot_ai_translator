@@ -30,10 +30,19 @@ const config = {
     provider: process.env.STT_PROVIDER || 'soniox'
   },
 
-  // Soniox Configuration (Real-time STT in Mini App)
+  // Soniox Configuration (Real-time STT + TTS)
   soniox: {
     apiKey: process.env.SONIOX_API_KEY,
-    model: 'stt-rt-v4'
+    // Separate key allowed for TTS; falls back to STT key if not set.
+    ttsApiKey: process.env.SONIOX_TTS_API_KEY || process.env.SONIOX_API_KEY,
+    model: 'stt-rt-v4',
+    ttsModel: 'tts-rt-v1',
+    ttsVoice: process.env.SONIOX_TTS_VOICE || 'Maya',
+  },
+
+  // Live translator defaults
+  liveTranslator: {
+    ttsProvider: process.env.TTS_PROVIDER_DEFAULT || 'soniox', // 'soniox' | 'eleven'
   },
 
   // Translation provider: 'gemini' | 'groq'
