@@ -675,6 +675,109 @@
       to { opacity: 1; transform: translateY(0); }
     }
     .fade-in { animation: fade-in 0.35s ease-out; }
+    /* ===================================================================
+       Tab navigation + Live tab styles
+       =================================================================== */
+    .app { padding-bottom: calc(72px + env(safe-area-inset-bottom, 0)); }
+    .tab-content[hidden] { display: none !important; }
+    .bottom-nav {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,0.94);
+      backdrop-filter: saturate(180%) blur(14px);
+      -webkit-backdrop-filter: saturate(180%) blur(14px);
+      border-top: 1px solid var(--divider);
+      display: flex; justify-content: space-around; align-items: stretch;
+      padding: 6px 0 env(safe-area-inset-bottom, 6px);
+      z-index: 100;
+    }
+    .nav-tab {
+      flex: 1 1 0; background: transparent; border: 0;
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+      padding: 8px 4px; color: var(--text-secondary); cursor: pointer;
+      font-family: inherit; font-size: 11px; font-weight: 600;
+      letter-spacing: -0.1px; transition: color 0.15s;
+    }
+    .nav-tab svg { width: 22px; height: 22px; }
+    .nav-tab.active { color: var(--accent); }
+    .nav-tab:active { transform: scale(0.96); }
+
+    /* ===== Live tab UI ===== */
+    .live-root {
+      display: flex; flex-direction: column; gap: 12px; padding: 4px 0 8px;
+    }
+    .live-langs {
+      display: flex; align-items: center; justify-content: center; gap: 12px; padding: 4px 0;
+    }
+    .live-langs select {
+      background: var(--card); color: var(--text-primary);
+      border: 1px solid var(--divider); border-radius: 12px;
+      padding: 8px 10px; font-size: 14px; font-family: inherit;
+      box-shadow: var(--shadow-sm);
+    }
+    .live-langs select:disabled { opacity: 0.5; }
+    .live-langs .arrow { color: var(--text-secondary); font-weight: 700; }
+    .live-langs .swap-btn {
+      background: transparent; border: 1.5px solid var(--accent);
+      border-radius: 999px; padding: 6px 10px; color: var(--accent);
+      font-weight: 700; font-size: 12px; cursor: pointer;
+    }
+    .live-langs .swap-btn:disabled { opacity: 0.4; }
+    .live-speed {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--card); border-radius: var(--radius-card);
+      padding: 12px 14px; box-shadow: var(--shadow-sm);
+    }
+    .live-speed label { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+    .live-speed input[type=range] { flex: 1; accent-color: var(--accent); }
+    .live-speed .speed-val {
+      font-family: ui-monospace, monospace; font-weight: 700;
+      color: var(--accent); min-width: 50px; text-align: right; font-size: 13px;
+    }
+    .live-speed .auto-toggle {
+      display: inline-flex; align-items: center; gap: 4px; font-size: 12px;
+      color: var(--text-secondary);
+    }
+    .live-card {
+      background: var(--card); border-radius: var(--radius-card);
+      padding: 14px 16px; box-shadow: var(--shadow-sm);
+    }
+    .live-card .label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px;
+      color: var(--text-secondary); margin-bottom: 6px; display: flex; justify-content: space-between;
+    }
+    .live-card .text-area {
+      min-height: 40px; max-height: 200px; overflow-y: auto;
+      font-size: 15px; line-height: 1.45; word-break: break-word; white-space: pre-wrap;
+    }
+    .live-card.target .text-area { font-size: 17px; min-height: 100px; color: var(--text-primary); font-weight: 500; }
+    .live-card .interim { color: var(--text-secondary); font-style: italic; }
+    .live-controls { display: flex; justify-content: center; padding: 4px 0; }
+    .live-start {
+      width: 78px; height: 78px; border-radius: 50%; border: 0;
+      background: linear-gradient(135deg, var(--accent) 0%, #4a6cd6 100%);
+      color: #fff; font-weight: 700; font-size: 13px; cursor: pointer;
+      box-shadow: 0 4px 16px rgba(91,127,255,0.35);
+      display: flex; align-items: center; justify-content: center;
+      transition: transform 0.15s;
+    }
+    .live-start.live { background: var(--recording); animation: pulse-rec 1.2s ease-in-out infinite; }
+    @keyframes pulse-rec { 0%,100% { box-shadow: 0 4px 16px rgba(229,57,53,0.45);} 50% { box-shadow: 0 4px 28px rgba(229,57,53,0.7);} }
+    .live-start svg { width: 32px; height: 32px; }
+    .live-metrics {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+    }
+    .live-metric {
+      background: var(--card); border-radius: 12px; padding: 8px 4px;
+      text-align: center; box-shadow: var(--shadow-sm);
+    }
+    .live-metric .v { font-family: ui-monospace, monospace; font-size: 13px; font-weight: 700; color: var(--accent); }
+    .live-metric .k { font-size: 9px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+    .live-log {
+      font-family: ui-monospace, monospace; font-size: 10px; color: var(--text-secondary);
+      max-height: 90px; overflow-y: auto; line-height: 1.4;
+    }
+    .live-log .err { color: var(--recording); }
+    .live-log .ok  { color: #34a853; }
   </style>
 </head>
 <body>
@@ -687,7 +790,10 @@
 
     <!-- Main content -->
     <div id="mainContent" style="display:none">
-      <div class="app-title">Voice Translator</div>
+      <div class="app-title" id="appTitle">Voice Translator</div>
+
+      <!-- ==================== VOICE TAB (legacy one-shot flow) ==================== -->
+      <div class="tab-content" data-tab="voice">
 
       <!-- Bottom sheet for language picker -->
       <div class="sheet-overlay" id="sheetOverlay" onclick="closeLangPicker()"></div>
@@ -792,6 +898,29 @@
         <!-- Tap hint -->
         <div class="tap-hint" id="tapHint">Натисніть на мікрофон і надиктуйте повідомлення або почніть писати</div>
       </div>
+
+      </div><!-- /tab-content[voice] -->
+
+      <!-- ==================== LIVE TAB (streaming, backend-orchestrated) ==================== -->
+      <div class="tab-content" data-tab="live" hidden>
+        <div id="liveTabRoot"><!-- filled in by Live tab module --></div>
+      </div>
+
+      <!-- Bottom navigation -->
+      <nav class="bottom-nav">
+        <button class="nav-tab active" data-tab="voice" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1"/><line x1="12" y1="19" x2="12" y2="22"/>
+          </svg>
+          <span>Voice</span>
+        </button>
+        <button class="nav-tab" data-tab="live" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+          <span>Live</span>
+        </button>
+      </nav>
     </div>
 
     <div class="error-toast" id="errorToast"></div>
@@ -2060,6 +2189,413 @@
 
     // ===== Start =====
     init();
+    // ===================================================================
+    // Tab navigation: Voice (legacy) ↔ Live (streaming)
+    // ===================================================================
+    (function setupTabs() {
+      const TAB_LS_KEY = 'index.html:activeTab';
+      const navBtns = document.querySelectorAll('.nav-tab');
+      const tabs = document.querySelectorAll('.tab-content');
+      const titleEl = document.getElementById('appTitle');
+      const TITLES = { voice: 'Voice Translator', live: 'Live Translator' };
+
+      function activate(name) {
+        navBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+        tabs.forEach(t => { t.hidden = t.dataset.tab !== name; });
+        if (titleEl && TITLES[name]) titleEl.textContent = TITLES[name];
+        try { localStorage.setItem(TAB_LS_KEY, name); } catch {}
+        // When leaving Live, stop any active session.
+        if (name !== 'live' && window.LiveTab && window.LiveTab.stopIfRunning) {
+          try { window.LiveTab.stopIfRunning(); } catch {}
+        }
+        // Lazy-init Live tab UI when entering for the first time.
+        if (name === 'live' && window.LiveTab && !window.LiveTab._initialized) {
+          try { window.LiveTab.init(); } catch (e) { console.error('Live init', e); }
+        }
+      }
+
+      navBtns.forEach(b => b.addEventListener('click', () => activate(b.dataset.tab)));
+
+      // Initial tab: ?tab=… → localStorage → 'voice'
+      let initial = 'voice';
+      const params = new URLSearchParams(location.search);
+      if (params.get('tab') === 'live') initial = 'live';
+      else { try { const saved = localStorage.getItem(TAB_LS_KEY); if (saved === 'live' || saved === 'voice') initial = saved; } catch {} }
+      // Defer so DOM/loading state finishes
+      setTimeout(() => activate(initial), 0);
+    })();
+
+    // ===================================================================
+    // Live Tab — backend-orchestrated streaming translator
+    // Thin client: captures mic → /ws/live → renders transcripts/audio.
+    // All AI logic (STT/MT/TTS/trigger/auto-speed) lives on the server.
+    // ===================================================================
+    window.LiveTab = (function() {
+      const SAMPLE_RATE = 16000;
+      const LANGS = [
+        { code: 'es', name: 'Spanish',    flag: '🇪🇸' },
+        { code: 'en', name: 'English',    flag: '🇺🇸' },
+        { code: 'ru', name: 'Russian',    flag: '🇷🇺' },
+        { code: 'uk', name: 'Ukrainian',  flag: '🇺🇦' },
+        { code: 'de', name: 'German',     flag: '🇩🇪' },
+        { code: 'fr', name: 'French',     flag: '🇫🇷' },
+        { code: 'it', name: 'Italian',    flag: '🇮🇹' },
+        { code: 'pt', name: 'Portuguese', flag: '🇵🇹' },
+        { code: 'pl', name: 'Polish',     flag: '🇵🇱' },
+        { code: 'tr', name: 'Turkish',    flag: '🇹🇷' },
+        { code: 'nl', name: 'Dutch',      flag: '🇳🇱' },
+        { code: 'cs', name: 'Czech',      flag: '🇨🇿' },
+        { code: 'ja', name: 'Japanese',   flag: '🇯🇵' },
+        { code: 'zh', name: 'Chinese',    flag: '🇨🇳' },
+        { code: 'ar', name: 'Arabic',     flag: '🇸🇦' },
+      ];
+      const SRC_LS = 'live.src';
+      const TGT_LS = 'live.tgt';
+      const SPEED_LS = 'live.speed';
+      const AUTO_LS = 'live.auto';
+
+      let state = {
+        running: false, ws: null, audioCtx: null, mediaStream: null, sourceNode: null, workletNode: null,
+        outputCtx: null, nextPlayTime: 0,
+        sourceLang: localStorage.getItem(SRC_LS) || 'es',
+        targetLang: localStorage.getItem(TGT_LS) || 'uk',
+        voiceSpeed: parseFloat(localStorage.getItem(SPEED_LS) || '1.0'),
+        autoSpeed: localStorage.getItem(AUTO_LS) === '1',
+        chunkCount: 0,
+        srcAccumulated: '',
+        srcInterim: '',
+        tgtCommitted: '',
+      };
+      let queueReportInterval = null;
+
+      const api = { _initialized: false, init, stopIfRunning };
+      return api;
+
+      // -----------------------------------------------------------------
+      function init() {
+        if (api._initialized) return;
+        api._initialized = true;
+        renderShell();
+        bindControls();
+      }
+
+      function $(id) { return document.getElementById(id); }
+      function log(msg, cls) {
+        const el = $('liveLog'); if (!el) return;
+        const line = document.createElement('div');
+        line.textContent = `${new Date().toLocaleTimeString()} ${msg}`;
+        if (cls) line.classList.add(cls);
+        el.appendChild(line); el.scrollTop = el.scrollHeight;
+      }
+
+      function renderShell() {
+        const root = document.getElementById('liveTabRoot');
+        if (!root) return;
+        const langOptions = LANGS.map(l => `<option value="${l.code}">${l.flag}  ${l.name} (${l.code})</option>`).join('');
+        root.innerHTML = `
+          <div class="live-root">
+            <div class="live-langs">
+              <select id="liveSrc">${langOptions}</select>
+              <span class="arrow">→</span>
+              <select id="liveTgt">${langOptions}</select>
+              <button id="liveSwap" class="swap-btn" type="button" title="Swap">⇄</button>
+            </div>
+
+            <div class="live-speed">
+              <label>⚡ Speed</label>
+              <input id="liveSpeedSlider" type="range" min="0.7" max="2.0" step="0.05" value="${state.voiceSpeed}">
+              <span class="speed-val" id="liveSpeedVal">${state.voiceSpeed.toFixed(2)}×</span>
+              <label class="auto-toggle"><input type="checkbox" id="liveAutoSpeed" ${state.autoSpeed ? 'checked' : ''}> Auto</label>
+            </div>
+
+            <div class="live-controls">
+              <button class="live-start" id="liveStartBtn" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1"/><line x1="12" y1="19" x2="12" y2="22"/>
+                </svg>
+              </button>
+            </div>
+
+            <div class="live-card source">
+              <div class="label"><span id="liveSrcLabel">Spanish (live)</span><span id="liveSrcStatus">idle</span></div>
+              <div class="text-area" id="liveSrcText">—</div>
+            </div>
+
+            <div class="live-card target">
+              <div class="label"><span id="liveTgtLabel">Ukrainian</span><span id="liveTgtStatus">—</span></div>
+              <div class="text-area" id="liveTgtText">—</div>
+            </div>
+
+            <div class="live-metrics">
+              <div class="live-metric"><div class="v" id="lmTrans">—</div><div class="k">Trans ms</div></div>
+              <div class="live-metric"><div class="v" id="lmTts">—</div><div class="k">TTS 1st byte</div></div>
+              <div class="live-metric"><div class="v" id="lmQueue">0.0s</div><div class="k">Queue</div></div>
+              <div class="live-metric"><div class="v" id="lmSpeed">${state.voiceSpeed.toFixed(2)}×</div><div class="k">Speed</div></div>
+            </div>
+
+            <div class="live-card">
+              <div class="label">Log</div>
+              <div class="live-log" id="liveLog"></div>
+            </div>
+          </div>
+        `;
+        $('liveSrc').value = state.sourceLang;
+        $('liveTgt').value = state.targetLang;
+        refreshLabels();
+      }
+
+      function refreshLabels() {
+        const s = LANGS.find(l => l.code === state.sourceLang);
+        const t = LANGS.find(l => l.code === state.targetLang);
+        if (s) $('liveSrcLabel').textContent = `${s.flag} ${s.name} (live)`;
+        if (t) $('liveTgtLabel').textContent = `${t.flag} ${t.name}`;
+      }
+
+      function bindControls() {
+        $('liveSrc').addEventListener('change', () => {
+          state.sourceLang = $('liveSrc').value;
+          localStorage.setItem(SRC_LS, state.sourceLang); refreshLabels();
+        });
+        $('liveTgt').addEventListener('change', () => {
+          state.targetLang = $('liveTgt').value;
+          localStorage.setItem(TGT_LS, state.targetLang); refreshLabels();
+        });
+        $('liveSwap').addEventListener('click', () => {
+          const a = state.sourceLang, b = state.targetLang;
+          state.sourceLang = b; state.targetLang = a;
+          $('liveSrc').value = b; $('liveTgt').value = a;
+          localStorage.setItem(SRC_LS, b); localStorage.setItem(TGT_LS, a);
+          refreshLabels();
+        });
+        $('liveSpeedSlider').addEventListener('input', () => {
+          if (state.autoSpeed) return;
+          state.voiceSpeed = parseFloat($('liveSpeedSlider').value);
+          $('liveSpeedVal').textContent = state.voiceSpeed.toFixed(2) + '×';
+          $('lmSpeed').textContent = state.voiceSpeed.toFixed(2) + '×';
+          localStorage.setItem(SPEED_LS, String(state.voiceSpeed));
+          if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+            state.ws.send(JSON.stringify({ type: 'set_speed', value: state.voiceSpeed }));
+          }
+        });
+        $('liveAutoSpeed').addEventListener('change', () => {
+          state.autoSpeed = $('liveAutoSpeed').checked;
+          localStorage.setItem(AUTO_LS, state.autoSpeed ? '1' : '0');
+          $('liveSpeedSlider').disabled = state.autoSpeed;
+          if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+            state.ws.send(JSON.stringify({ type: 'set_auto', enabled: state.autoSpeed }));
+          }
+        });
+        $('liveSpeedSlider').disabled = state.autoSpeed;
+        $('liveStartBtn').addEventListener('click', () => {
+          if (state.running) stop();
+          else start().catch(e => { log('[start-error] ' + e.message, 'err'); stop(); });
+        });
+      }
+
+      // -----------------------------------------------------------------
+      async function start() {
+        if (state.sourceLang === state.targetLang) { log('[err] source = target', 'err'); return; }
+        state.chunkCount = 0; state.srcAccumulated = ''; state.srcInterim = ''; state.tgtCommitted = '';
+        $('liveSrcText').textContent = '—'; $('liveTgtText').textContent = '—';
+        $('lmTrans').textContent = '—'; $('lmTts').textContent = '—';
+
+        await ensureOutputCtx();
+        await openMic();
+
+        // Open backend WS
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        const ws = new WebSocket(`${proto}://${location.host}/ws/live`);
+        ws.binaryType = 'arraybuffer';
+        state.ws = ws;
+        ws.addEventListener('open', () => {
+          ws.send(JSON.stringify({
+            type: 'init',
+            sourceLang: state.sourceLang,
+            targetLang: state.targetLang,
+            voiceSpeed: state.voiceSpeed,
+            autoSpeed:  state.autoSpeed,
+          }));
+          log('[ws] open, init sent');
+        });
+        ws.addEventListener('message', onWsMessage);
+        ws.addEventListener('error', () => log('[ws] error', 'err'));
+        ws.addEventListener('close', (ev) => log(`[ws] closed code=${ev.code}`));
+
+        state.running = true;
+        $('liveStartBtn').classList.add('live');
+        $('liveSrcStatus').textContent = 'connecting…';
+        // periodic queue-state report → drives server auto-speed
+        queueReportInterval = setInterval(() => {
+          if (!state.running || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+          const q = getQueuedAudioSec();
+          state.ws.send(JSON.stringify({ type: 'queue_state', queueSec: q }));
+          $('lmQueue').textContent = q.toFixed(1) + 's';
+        }, 250);
+      }
+
+      async function stop() {
+        state.running = false;
+        if (queueReportInterval) { clearInterval(queueReportInterval); queueReportInterval = null; }
+        try { state.workletNode?.disconnect(); } catch {}
+        try { state.sourceNode?.disconnect(); } catch {}
+        try { state.mediaStream?.getTracks().forEach(t => t.stop()); } catch {}
+        try { state.audioCtx?.close(); } catch {}
+        state.workletNode = state.sourceNode = state.mediaStream = state.audioCtx = null;
+        if (state.ws) {
+          try { if (state.ws.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify({ type: 'stop' })); } catch {}
+          try { state.ws.close(); } catch {}
+          state.ws = null;
+        }
+        $('liveStartBtn')?.classList.remove('live');
+        if ($('liveSrcStatus')) $('liveSrcStatus').textContent = 'stopped';
+      }
+      function stopIfRunning() { if (state.running) stop(); }
+
+      // -----------------------------------------------------------------
+      function onWsMessage(ev) {
+        if (ev.data instanceof ArrayBuffer || (typeof Blob !== 'undefined' && ev.data instanceof Blob)) {
+          // Binary PCM frame
+          if (ev.data instanceof Blob) ev.data.arrayBuffer().then(playPcmChunk);
+          else playPcmChunk(ev.data);
+          return;
+        }
+        let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+        switch (msg.type) {
+          case 'started':
+            $('liveSrcStatus').textContent = 'live';
+            log('[server] started', 'ok');
+            break;
+          case 'src_partial':
+            state.srcInterim = msg.text || '';
+            renderSource();
+            break;
+          case 'src_final':
+            state.srcAccumulated += msg.text || '';
+            state.srcInterim = '';
+            renderSource();
+            break;
+          case 'tgt_chunk':
+            if (msg.dropReason) {
+              log(`[guard] ${msg.dropReason}`, 'err');
+            } else if (msg.text) {
+              state.tgtCommitted = (state.tgtCommitted ? state.tgtCommitted + ' ' : '') + msg.text;
+              renderTarget();
+              state.chunkCount++;
+              $('lmTrans').textContent = msg.transMs + 'ms';
+              log(`[chunk #${state.chunkCount}] (${msg.mode}) "${msg.text.slice(0, 60)}"`, 'ok');
+            }
+            break;
+          case 'tts_first_byte':
+            $('lmTts').textContent = msg.latencyMs + 'ms';
+            break;
+          case 'metrics':
+            if (state.autoSpeed) {
+              state.voiceSpeed = msg.currentSpeed;
+              $('liveSpeedSlider').value = String(msg.currentSpeed);
+              $('liveSpeedVal').textContent = msg.currentSpeed.toFixed(2) + '×';
+            }
+            $('lmSpeed').textContent = (msg.currentSpeed || state.voiceSpeed).toFixed(2) + '×';
+            break;
+          case 'log':
+            log(`[server] ${msg.level}: ${msg.msg}`, msg.level === 'error' ? 'err' : '');
+            break;
+          case 'error':
+            log(`[server-error] ${msg.message}`, 'err');
+            break;
+          case 'done':
+            log('[server] done');
+            break;
+        }
+      }
+
+      function renderSource() {
+        const el = $('liveSrcText');
+        el.innerHTML = '';
+        if (state.srcAccumulated) {
+          const a = document.createElement('span'); a.textContent = state.srcAccumulated + ' '; el.appendChild(a);
+        }
+        if (state.srcInterim) {
+          const b = document.createElement('span'); b.className = 'interim'; b.textContent = state.srcInterim; el.appendChild(b);
+        }
+        if (!state.srcAccumulated && !state.srcInterim) el.textContent = '—';
+      }
+      function renderTarget() {
+        $('liveTgtText').textContent = state.tgtCommitted || '—';
+      }
+
+      // ===== Mic capture (AudioWorklet, 16 kHz s16le) → ws.send(audio_b64) =====
+      async function openMic() {
+        state.audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+        if (state.audioCtx.state === 'suspended') await state.audioCtx.resume();
+        state.mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: { sampleRate: SAMPLE_RATE, channelCount: 1, echoCancellation: true, noiseSuppression: true },
+        });
+        state.sourceNode = state.audioCtx.createMediaStreamSource(state.mediaStream);
+        const workletCode = `
+          class PCMWorklet extends AudioWorkletProcessor {
+            constructor() { super(); this.buf = new Int16Array(0); this.target = 1600; }
+            process(inputs) {
+              const input = inputs[0][0];
+              if (!input) return true;
+              const merged = new Int16Array(this.buf.length + input.length);
+              merged.set(this.buf, 0);
+              for (let i = 0; i < input.length; i++) {
+                const s = Math.max(-1, Math.min(1, input[i]));
+                merged[this.buf.length + i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+              }
+              if (merged.length >= this.target) {
+                this.port.postMessage(merged.buffer, [merged.buffer]);
+                this.buf = new Int16Array(0);
+              } else { this.buf = merged; }
+              return true;
+            }
+          }
+          registerProcessor('live-pcm-worklet', PCMWorklet);
+        `;
+        const blobUrl = URL.createObjectURL(new Blob([workletCode], { type: 'application/javascript' }));
+        await state.audioCtx.audioWorklet.addModule(blobUrl);
+        state.workletNode = new AudioWorkletNode(state.audioCtx, 'live-pcm-worklet');
+        state.workletNode.port.onmessage = (e) => {
+          if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+          const bytes = new Uint8Array(e.data);
+          let bin = '';
+          const chunkSize = 0x8000;
+          for (let i = 0; i < bytes.length; i += chunkSize) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+          state.ws.send(JSON.stringify({ type: 'audio_b64', data: btoa(bin) }));
+        };
+        state.sourceNode.connect(state.workletNode);
+      }
+
+      // ===== Output PCM playback (24 kHz from server, with playbackRate for residual stretch) =====
+      async function ensureOutputCtx() {
+        if (!state.outputCtx) state.outputCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+        if (state.outputCtx.state === 'suspended') await state.outputCtx.resume();
+        state.nextPlayTime = state.outputCtx.currentTime;
+      }
+      function playPcmChunk(arrayBuffer) {
+        if (!state.outputCtx) return;
+        const view = new DataView(arrayBuffer);
+        const samples = arrayBuffer.byteLength / 2;
+        const float = new Float32Array(samples);
+        for (let i = 0; i < samples; i++) float[i] = view.getInt16(i * 2, true) / 32768;
+        const buf = state.outputCtx.createBuffer(1, samples, 24000);
+        buf.getChannelData(0).set(float);
+        const src = state.outputCtx.createBufferSource();
+        src.buffer = buf;
+        // Server-side speed already capped at 1.2× by ElevenLabs Flash; residual >1.2× via playbackRate.
+        const serverCapped = Math.min(state.voiceSpeed, 1.2);
+        const clientRate = state.voiceSpeed / serverCapped;
+        src.playbackRate.value = clientRate;
+        src.connect(state.outputCtx.destination);
+        const startAt = Math.max(state.outputCtx.currentTime, state.nextPlayTime);
+        src.start(startAt);
+        state.nextPlayTime = startAt + (buf.duration / clientRate);
+      }
+      function getQueuedAudioSec() {
+        if (!state.outputCtx) return 0;
+        return Math.max(0, state.nextPlayTime - state.outputCtx.currentTime);
+      }
+    })();
   </script>
 </body>
 </html>

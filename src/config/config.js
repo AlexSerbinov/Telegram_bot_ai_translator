@@ -53,6 +53,13 @@ const config = {
     model: process.env.TRANSLATION_MODEL || 'openai/gpt-oss-120b',
   },
 
+  // Palabra.ai Configuration (real-time speech-to-speech translation)
+  palabra: {
+    clientId: process.env.PALABRA_CLIENT_ID,
+    clientSecret: process.env.PALABRA_CLIENT_SECRET,
+    sessionUrl: 'https://api.palabra.ai/session-storage/session',
+  },
+
   // Server Configuration (Express for Mini App)
   server: {
     port: parseInt(process.env.SERVER_PORT) || 3000,

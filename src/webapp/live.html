@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Streaming Live Translator</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #151821;
+    --accent: #ffd54a;
+    --accent2: #4ade80;
+    --muted: #6b7280;
+    --text: #e5e7eb;
+    --danger: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px 40px; min-height: 100vh;
+  }
+  header { text-align: center; margin-bottom: 16px; }
+  h1 { margin: 0; font-size: 22px; font-weight: 700; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .pipeline {
+    color: var(--muted); font-size: 11px; letter-spacing: 0.5px;
+    margin-top: 6px; font-family: ui-monospace, monospace;
+  }
+  .container { width: 100%; max-width: 720px; display: flex; flex-direction: column; gap: 14px; }
+  .langs {
+    display: flex; gap: 10px; align-items: center; justify-content: center;
+    margin-bottom: 6px; flex-wrap: wrap;
+  }
+  .langs select {
+    background: var(--panel); color: var(--text);
+    border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+    padding: 8px 10px; font-size: 14px; font-family: inherit; cursor: pointer;
+  }
+  .langs select:disabled { opacity: 0.5; cursor: not-allowed; }
+  .langs .arrow { color: var(--muted); font-weight: 700; }
+  .swap-btn {
+    background: transparent; color: var(--accent); border: 1px solid var(--accent);
+    border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 600;
+  }
+  .swap-btn:disabled { opacity: 0.4; }
+  .device-row {
+    display: flex; gap: 8px; align-items: center; justify-content: center;
+    flex-wrap: wrap; margin-bottom: 6px;
+  }
+  .device-row label { font-size: 12px; color: var(--muted); }
+  .device-row select {
+    background: var(--panel); color: var(--text);
+    border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+    padding: 6px 10px; font-size: 13px; max-width: 360px;
+  }
+  .device-row select:disabled { opacity: 0.5; cursor: not-allowed; }
+  .device-row .refresh-btn {
+    background: transparent; color: var(--muted); border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+  }
+  .hint {
+    color: var(--muted); font-size: 11px; text-align: center;
+    margin-top: -2px; margin-bottom: 4px; max-width: 540px; line-height: 1.45;
+  }
+  .hint a { color: var(--accent); text-decoration: none; }
+  .speed-row {
+    display: flex; gap: 10px; align-items: center; justify-content: center;
+    margin-bottom: 6px; flex-wrap: wrap;
+  }
+  .speed-row label { font-size: 12px; color: var(--muted); }
+  .speed-row input[type=range] { width: 200px; accent-color: var(--accent); }
+  .speed-row input[type=range]:disabled { opacity: 0.6; }
+  .speed-row .speed-value {
+    font-family: ui-monospace, monospace; font-size: 13px; font-weight: 700;
+    color: var(--accent); min-width: 52px; text-align: right;
+  }
+  .auto-toggle {
+    display: inline-flex; gap: 6px; align-items: center;
+    background: rgba(255,255,255,0.04); border-radius: 999px;
+    padding: 4px 10px; font-size: 12px; cursor: pointer;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .auto-toggle input { accent-color: var(--accent2); }
+  .auto-toggle.active { border-color: var(--accent2); color: var(--accent2); }
+  .card {
+    background: var(--panel); border-radius: 14px; padding: 18px 16px;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--muted); margin-bottom: 8px; display: flex; justify-content: space-between;
+  }
+  .text-area {
+    min-height: 80px; font-size: 17px; line-height: 1.4; white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .interim { color: var(--muted); font-style: italic; }
+  .final { color: var(--text); }
+  .committed { color: var(--accent2); font-weight: 600; font-size: 19px; }
+  .draft { color: var(--muted); font-style: italic; font-size: 17px; }
+  .controls { display: flex; gap: 10px; justify-content: center; margin: 6px 0; }
+  button {
+    background: var(--accent); color: #111; font-weight: 700;
+    border: none; border-radius: 999px; padding: 14px 26px;
+    font-size: 15px; cursor: pointer; transition: 0.15s;
+  }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.stop { background: var(--danger); color: #fff; }
+  button:not(:disabled):hover { transform: translateY(-1px); }
+  .metrics {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px;
+    font-family: ui-monospace, monospace; font-size: 13px;
+  }
+  .metric {
+    background: rgba(255,255,255,0.03); border-radius: 8px; padding: 10px;
+    text-align: center;
+  }
+  .metric .v { color: var(--accent); font-size: 18px; font-weight: 700; }
+  .metric .k { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; margin-top: 4px; }
+  .log {
+    font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted);
+    max-height: 160px; overflow-y: auto; line-height: 1.5;
+  }
+  .log .err { color: var(--danger); }
+  .log .ok { color: var(--accent2); }
+  .status {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted); margin-right: 6px; vertical-align: middle;
+  }
+  .status.live { background: var(--accent2); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+</style>
+</head>
+<body>
+  <header>
+    <h1 id="title">🇪🇸 → 🇺🇦 Streaming Translator</h1>
+    <div class="subtitle">Incremental streaming · Soniox → Groq gpt-oss-120b → ElevenLabs Flash v2.5</div>
+    <div class="pipeline">MIC → STT → TRANS (delta-only) → TTS WS → AUDIO</div>
+  </header>
+
+  <div class="container">
+    <div class="langs">
+      <select id="srcLang"></select>
+      <span class="arrow">→</span>
+      <select id="tgtLang"></select>
+      <button id="swapBtn" class="swap-btn" type="button" title="Swap">⇄</button>
+    </div>
+
+    <div class="device-row">
+      <label for="micDevice">🎙 Audio source:</label>
+      <select id="micDevice"><option value="">Default</option></select>
+      <button id="refreshDevicesBtn" class="refresh-btn" type="button" title="Refresh device list">↻</button>
+    </div>
+    <div class="hint">
+      Для системного звуку Mac встанови <a href="https://github.com/ExistentialAudio/BlackHole" target="_blank" rel="noopener">BlackHole</a> або Loopback — віртуальний пристрій з'явиться у списку як звичайне джерело.
+    </div>
+
+    <div class="speed-row">
+      <label for="speedSlider">⚡ Voice speed:</label>
+      <input id="speedSlider" type="range" min="0.7" max="2.0" step="0.05" value="1.0" />
+      <span class="speed-value" id="speedValue">1.00×</span>
+      <label class="auto-toggle" id="autoToggle">
+        <input id="autoSpeed" type="checkbox" />
+        🤖 Auto
+      </label>
+    </div>
+
+    <div class="card">
+      <div class="label">
+        <span><span class="status" id="statusDot"></span><span id="srcLabel">Spanish</span> (live)</span>
+        <span id="srcStatus">idle</span>
+      </div>
+      <div class="text-area" id="srcText">—</div>
+    </div>
+
+    <div class="controls">
+      <button id="startBtn">🎤 Start listening</button>
+      <button id="stopBtn" class="stop" disabled>■ Stop</button>
+    </div>
+
+    <div class="card">
+      <div class="label">
+        <span><span id="tgtLabel">Ukrainian</span> (committed + draft)</span>
+        <span id="tgtStatus">—</span>
+      </div>
+      <div class="text-area" id="tgtText">—</div>
+    </div>
+
+    <div class="card">
+      <div class="label">Latency</div>
+      <div class="metrics">
+        <div class="metric"><div class="v" id="mTrans">—</div><div class="k">Translate (last)</div></div>
+        <div class="metric"><div class="v" id="mTts">—</div><div class="k">TTS first byte</div></div>
+        <div class="metric"><div class="v" id="mQueue">0.0s</div><div class="k">Audio queue</div></div>
+        <div class="metric"><div class="v" id="mChunks">0</div><div class="k">Chunks spoken</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Log</div>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+
+<script type="module">
+// ============================================================
+// TODO (deferred):
+//   - Variant 2 (clause-chunk) — fire on commas/conjunctions for snappier UX
+//   - Bidirectional voice picker (use Spanish-native ElevenLabs voice for ES output)
+//   - Replace Groq with a SimulMT model (Hibiki / SeamlessStreaming) for production
+// ============================================================
+
+const $ = (id) => document.getElementById(id);
+const log = (msg, cls = '') => {
+  const el = $('log');
+  const line = document.createElement('div');
+  line.textContent = `${new Date().toLocaleTimeString()} ${msg}`;
+  if (cls) line.classList.add(cls);
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+};
+
+// ===== Languages (mirror palabra.html) =====
+const LANGS = [
+  { code: 'es', name: 'Spanish',    flag: '🇪🇸', script: 'latin' },
+  { code: 'en', name: 'English',    flag: '🇺🇸', script: 'latin' },
+  { code: 'ru', name: 'Russian',    flag: '🇷🇺', script: 'cyrillic' },
+  { code: 'uk', name: 'Ukrainian',  flag: '🇺🇦', script: 'cyrillic' },
+  { code: 'de', name: 'German',     flag: '🇩🇪', script: 'latin' },
+  { code: 'fr', name: 'French',     flag: '🇫🇷', script: 'latin' },
+  { code: 'it', name: 'Italian',    flag: '🇮🇹', script: 'latin' },
+  { code: 'pt', name: 'Portuguese', flag: '🇵🇹', script: 'latin' },
+  { code: 'pl', name: 'Polish',     flag: '🇵🇱', script: 'latin' },
+  { code: 'tr', name: 'Turkish',    flag: '🇹🇷', script: 'latin' },
+  { code: 'nl', name: 'Dutch',      flag: '🇳🇱', script: 'latin' },
+  { code: 'cs', name: 'Czech',      flag: '🇨🇿', script: 'latin' },
+  { code: 'ja', name: 'Japanese',   flag: '🇯🇵', script: 'other' },
+  { code: 'zh', name: 'Chinese',    flag: '🇨🇳', script: 'other' },
+  { code: 'ar', name: 'Arabic',     flag: '🇸🇦', script: 'other' },
+];
+const langByCode = (code) => LANGS.find(l => l.code === code);
+const CYRILLIC_RE = /[Ѐ-ӿ]/;
+const LATIN_RE = /[A-Za-zÀ-ÿ]/;
+
+let SOURCE_LANG = 'es';
+let TARGET_LANG = 'uk';
+
+function buildSelectors() {
+  const src = $('srcLang'), tgt = $('tgtLang');
+  for (const l of LANGS) {
+    src.add(new Option(`${l.flag}  ${l.name} (${l.code})`, l.code));
+    tgt.add(new Option(`${l.flag}  ${l.name} (${l.code})`, l.code));
+  }
+  src.value = SOURCE_LANG; tgt.value = TARGET_LANG;
+  src.addEventListener('change', () => { SOURCE_LANG = src.value; updateHeader(); });
+  tgt.addEventListener('change', () => { TARGET_LANG = tgt.value; updateHeader(); });
+  $('swapBtn').addEventListener('click', () => {
+    const a = src.value, b = tgt.value;
+    src.value = b; tgt.value = a;
+    SOURCE_LANG = b; TARGET_LANG = a;
+    updateHeader();
+  });
+  updateHeader();
+}
+function updateHeader() {
+  const s = langByCode(SOURCE_LANG), t = langByCode(TARGET_LANG);
+  $('title').textContent = `${s.flag} → ${t.flag} Streaming Translator`;
+  $('srcLabel').textContent = s.name;
+  $('tgtLabel').textContent = t.name;
+}
+function setLangsLocked(locked) {
+  $('srcLang').disabled = locked;
+  $('tgtLang').disabled = locked;
+  $('swapBtn').disabled = locked;
+  $('micDevice').disabled = locked;
+  $('refreshDevicesBtn').disabled = locked;
+}
+
+// ===== Audio device picker =====
+const DEVICE_LS_KEY = 'live.html:audioInputDeviceId';
+let selectedDeviceId = localStorage.getItem(DEVICE_LS_KEY) || '';
+
+async function loadAudioDevices(promptForPermission = false) {
+  try {
+    // Without prior permission, enumerateDevices returns empty `label` strings.
+    // Trigger a tiny getUserMedia to unlock labels, then immediately stop the tracks.
+    if (promptForPermission) {
+      try {
+        const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+        tmp.getTracks().forEach(t => t.stop());
+      } catch (e) {
+        log(`[mic] permission denied: ${e.message}`, 'err');
+      }
+    }
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter(d => d.kind === 'audioinput');
+    const sel = $('micDevice');
+    sel.innerHTML = '<option value="">Default</option>';
+    for (const d of inputs) {
+      const label = d.label || `Microphone ${d.deviceId.slice(0, 6)}`;
+      sel.add(new Option(label, d.deviceId));
+    }
+    // Restore previous selection if it's still present
+    if (selectedDeviceId && inputs.some(d => d.deviceId === selectedDeviceId)) {
+      sel.value = selectedDeviceId;
+    } else {
+      selectedDeviceId = '';
+    }
+    log(`[mic] enumerated ${inputs.length} input device(s)`);
+  } catch (e) {
+    log(`[mic] enumerateDevices failed: ${e.message}`, 'err');
+  }
+}
+
+$('micDevice').addEventListener('change', () => {
+  selectedDeviceId = $('micDevice').value || '';
+  localStorage.setItem(DEVICE_LS_KEY, selectedDeviceId);
+  log(`[mic] selected: ${$('micDevice').selectedOptions[0].text}`);
+});
+$('refreshDevicesBtn').addEventListener('click', () => loadAudioDevices(true));
+if (navigator.mediaDevices && 'addEventListener' in navigator.mediaDevices) {
+  navigator.mediaDevices.addEventListener('devicechange', () => loadAudioDevices(false));
+}
+
+// Word-level script filter — drops tokens that don't match SOURCE_LANG script.
+// Soniox often transcribes spurious words from another language even with languageHints set;
+// this strips them out BEFORE we accumulate, so Groq sees a clean source.
+function filterToScript(text) {
+  const src = langByCode(SOURCE_LANG);
+  if (!src || src.script === 'other') return text; // CJK / Arabic — keep as-is
+  // Split on whitespace runs but keep them so spacing is preserved
+  return text.split(/(\s+)/).filter(tok => {
+    if (!tok || /^\s+$/.test(tok)) return true;
+    if (src.script === 'latin')    return !CYRILLIC_RE.test(tok);
+    if (src.script === 'cyrillic') return CYRILLIC_RE.test(tok) || !LATIN_RE.test(tok);
+    return true;
+  }).join('');
+}
+const PUNCT_TAIL_RE = /[.,!?;:…»"”')]\s*$/;
+
+// ===== Soniox client =====
+let sonioxClient = null;
+async function getSonioxClient(apiKey) {
+  const { SonioxClient } = await import('https://unpkg.com/@soniox/speech-to-text-web?module');
+  return new SonioxClient({
+    apiKey,
+    webSocketUri: 'wss://stt-rt.soniox.com/transcribe-websocket',
+  });
+}
+
+// ===== Playback speed (pitch-preserving via WSOLA worklet) =====
+const SPEED_LS_KEY = 'live.html:voiceSpeed';
+const AUTO_LS_KEY = 'live.html:autoSpeed';
+let playbackSpeed = parseFloat(localStorage.getItem(SPEED_LS_KEY) || '1.0');
+if (!Number.isFinite(playbackSpeed) || playbackSpeed < 0.7 || playbackSpeed > 2.0) playbackSpeed = 1.0;
+let autoSpeedOn = localStorage.getItem(AUTO_LS_KEY) === '1';
+
+function setSpeedUI(v) {
+  $('speedSlider').value = String(v);
+  $('speedValue').textContent = `${v.toFixed(2)}×`;
+}
+// No-op kept for symmetry — current pipeline applies speed at chunk-time in playPcmChunk.
+function applySpeedToWorklet() { /* speed applied per-chunk in playPcmChunk */ }
+function refreshAutoUI() {
+  $('autoSpeed').checked = autoSpeedOn;
+  $('autoToggle').classList.toggle('active', autoSpeedOn);
+  $('speedSlider').disabled = autoSpeedOn;
+}
+$('speedSlider').addEventListener('input', () => {
+  if (autoSpeedOn) return;
+  playbackSpeed = parseFloat($('speedSlider').value);
+  $('speedValue').textContent = `${playbackSpeed.toFixed(2)}×`;
+  localStorage.setItem(SPEED_LS_KEY, String(playbackSpeed));
+  applySpeedToWorklet();
+});
+$('autoSpeed').addEventListener('change', () => {
+  autoSpeedOn = $('autoSpeed').checked;
+  localStorage.setItem(AUTO_LS_KEY, autoSpeedOn ? '1' : '0');
+  refreshAutoUI();
+  if (!autoSpeedOn) {
+    // restore last manual value
+    const saved = parseFloat(localStorage.getItem(SPEED_LS_KEY) || '1.0');
+    playbackSpeed = (saved >= 0.7 && saved <= 2.0) ? saved : 1.0;
+    setSpeedUI(playbackSpeed);
+    applySpeedToWorklet();
+  }
+});
+setSpeedUI(playbackSpeed);
+refreshAutoUI();
+
+// ===== TTS WS (persistent) =====
+let ttsWs = null;
+let audioCtx = null;
+let nextPlayTime = 0;
+
+function pcmToFloat32(buffer) {
+  const view = new DataView(buffer);
+  const samples = buffer.byteLength / 2;
+  const out = new Float32Array(samples);
+  for (let i = 0; i < samples; i++) out[i] = view.getInt16(i * 2, true) / 32768;
+  return out;
+}
+
+async function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+  nextPlayTime = audioCtx.currentTime;
+}
+
+// Standard Web Audio playback. Each chunk is scheduled gapless.
+// Speed > 1.0 raises pitch slightly (no time-stretch) — acceptable trade-off until
+// a proper pitch-preserving stretcher is added later.
+function playPcmChunk(arrayBuffer) {
+  const float = pcmToFloat32(arrayBuffer);
+  const buf = audioCtx.createBuffer(1, float.length, 24000);
+  buf.getChannelData(0).set(float);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const rate = Math.max(0.5, Math.min(2.5, playbackSpeed));
+  src.playbackRate.value = rate;
+  src.connect(audioCtx.destination);
+  const startAt = Math.max(audioCtx.currentTime, nextPlayTime);
+  src.start(startAt);
+  nextPlayTime = startAt + (buf.duration / rate);
+}
+
+async function openTtsWs(language) {
+  return new Promise((resolve, reject) => {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://${location.host}/ws/tts`);
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => {
+      // Always synthesize at natural pace; client-side WSOLA handles full 0.7–2.0× without pitch shift.
+      ws.send(JSON.stringify({ type: 'init', language, speed: 1.0 }));
+      log(`[TTS-WS] connected (lang=${language}, server speed=1.00× — client WSOLA stretches)`);
+      resolve(ws);
+    };
+    ws.onerror = (e) => { log('[TTS-WS] error', 'err'); reject(e); };
+    ws.onclose = () => log('[TTS-WS] closed');
+    ws.onmessage = (ev) => {
+      if (typeof ev.data === 'string') {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'first-byte') {
+            $('mTts').textContent = `${msg.latencyMs}ms`;
+          } else if (msg.type === 'error') {
+            log(`[TTS-WS] ${msg.message}`, 'err');
+          } else if (msg.type === 'done') {
+            // upstream closed — usually after Stop
+          }
+        } catch {}
+      } else {
+        playPcmChunk(ev.data);
+      }
+    };
+  });
+}
+
+// ===== Streaming translation state (incremental) =====
+let isRunning = false;
+let accumulatedFinal = '';   // Soniox finalized source (full, append-only, for display)
+let lastInterim = '';
+let committedSrcLen = 0;      // INDEX into accumulatedFinal — chars already sent for translation
+let committedTrans = '';      // translation already spoken (locked, append-only)
+let inFlight = false;
+let tickHandle = null;
+let chunkCount = 0;
+
+// We send only NEW source segments; small recent context keeps cohesion.
+// Adaptive trigger thresholds tuned by current TTS audio queue depth (seconds ahead of playhead):
+//   queue < 0.5s  — "catching up" → fire small chunks aggressively
+//   0.5s–1.5s     — "balanced"     → fire on sentence ends, larger chunks on commas
+//   queue ≥ 1.5s  — "caught up"    → patient: fire only on .!? or very long pending
+const TICK_MS = 250;
+const CONTEXT_CHARS = 240;
+const STRONG_PUNCT_RE = /[.!?…]\s*$/;
+const WEAK_PUNCT_RE = /[,;:]\s*$/;
+
+function renderSource() {
+  const el = $('srcText');
+  el.innerHTML = '';
+  if (accumulatedFinal) {
+    const a = document.createElement('span'); a.className = 'final'; a.textContent = accumulatedFinal + ' ';
+    el.appendChild(a);
+  }
+  if (lastInterim) {
+    const b = document.createElement('span'); b.className = 'interim'; b.textContent = lastInterim;
+    el.appendChild(b);
+  }
+  if (!accumulatedFinal && !lastInterim) el.textContent = '—';
+}
+function renderTarget() {
+  const el = $('tgtText');
+  el.innerHTML = '';
+  if (committedTrans) {
+    const a = document.createElement('span'); a.className = 'committed'; a.textContent = committedTrans;
+    el.appendChild(a);
+  }
+  if (!committedTrans) el.textContent = '—';
+}
+
+// Translate ONLY the new source segment, given small recent context. Append result to committedTrans.
+// `snapLen` is the accumulatedFinal length captured at request time — committedSrcLen is advanced
+// to exactly this value on success, so no string-matching / spacing issues can drift the boundary.
+async function translateIncremental(newSrc, snapLen) {
+  inFlight = true;
+  $('tgtStatus').textContent = 'translating…';
+  const t0 = performance.now();
+  try {
+    const committedSrcText = accumulatedFinal.slice(0, committedSrcLen);
+    const contextSrc = committedSrcText.slice(-CONTEXT_CHARS);
+    const contextTrans = committedTrans.slice(-CONTEXT_CHARS);
+    log(`[req] new=${newSrc.length}c ctx=${contextSrc.length}c → "${newSrc.slice(0, 60)}…"`);
+
+    const r = await fetch('/api/translate-fast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: newSrc,
+        fromLanguage: SOURCE_LANG,
+        toLanguage: TARGET_LANG,
+        contextSrc,
+        contextTrans,
+      }),
+    });
+    if (!r.ok) {
+      log(`[translate] HTTP ${r.status}: ${await r.text()}`, 'err');
+      $('tgtStatus').textContent = 'error';
+      return;
+    }
+    const { translation, elapsedMs } = await r.json();
+    const totalMs = Math.round(performance.now() - t0);
+    $('mTrans').textContent = `${totalMs}ms`;
+
+    const trimmed = (translation || '').trim();
+    if (!trimmed) { log('[translate] empty result, skipping', 'err'); return; }
+
+    // Anti-hallucination guards:
+    // (1) drop if response echoes a chunk of recent committedTrans
+    const tailProbe = contextTrans.trim().slice(-60);
+    if (tailProbe && (trimmed.startsWith(tailProbe) || trimmed.includes(tailProbe))) {
+      log(`[guard] response echoes context tail, dropping`, 'err');
+      return;
+    }
+    // (2) drop if response is wildly longer than the new source segment
+    if (trimmed.length > newSrc.length * 4 + 80) {
+      log(`[guard] response too long (${trimmed.length}c for ${newSrc.length}c src), dropping`, 'err');
+      return;
+    }
+
+    // Advance the index to the exact length we snapshotted at request time.
+    committedSrcLen = Math.max(committedSrcLen, snapLen);
+    committedTrans = (committedTrans ? committedTrans + ' ' : '') + trimmed;
+    renderTarget();
+    $('tgtStatus').textContent = 'speaking…';
+
+    if (ttsWs && ttsWs.readyState === WebSocket.OPEN) {
+      ttsWs.send(JSON.stringify({ type: 'chunk', text: trimmed }));
+      chunkCount++;
+      $('mChunks').textContent = chunkCount;
+    } else {
+      log('[TTS-WS] not open, skipping chunk', 'err');
+    }
+    log(`[chunk+ #${chunkCount}] ${elapsedMs}ms / ${totalMs}ms → "${trimmed.slice(0, 70)}"`, 'ok');
+  } catch (e) {
+    log(`[translate] ${e.message}`, 'err');
+  } finally {
+    inFlight = false;
+  }
+}
+
+// Pending = whatever has accumulated past the committed index.
+function getPendingSrc() {
+  return accumulatedFinal.slice(committedSrcLen).trim();
+}
+
+// Estimated seconds of synthesized audio still queued ahead of the playhead.
+function getQueuedAudioSec() {
+  if (!audioCtx) return 0;
+  return Math.max(0, nextPlayTime - audioCtx.currentTime);
+}
+
+// Decides whether to fire a translation now based on pending size + queue depth.
+// Returns the snapshot length to commit to on success, or 0 if we should wait.
+function shouldFireNow() {
+  if (!isRunning || inFlight) return 0;
+  const pending = accumulatedFinal.slice(committedSrcLen).trim();
+  if (!pending) return 0;
+  const queue = getQueuedAudioSec();
+  const tail4 = pending.slice(-4);
+  const hasStrong = STRONG_PUNCT_RE.test(tail4);
+  const hasWeak   = WEAK_PUNCT_RE.test(tail4);
+
+  let mode, fire = false;
+  if (queue < 0.5) {
+    mode = 'catch-up';
+    fire = hasStrong || hasWeak || pending.length >= 25;
+  } else if (queue < 1.5) {
+    mode = 'balanced';
+    fire = hasStrong || (hasWeak && pending.length >= 40) || pending.length >= 80;
+  } else {
+    mode = 'caught-up';
+    fire = hasStrong || pending.length >= 120;
+  }
+  // Hard ceiling: don't let pending grow forever (e.g., long monologue without periods).
+  if (pending.length >= 200) fire = true;
+  return fire ? accumulatedFinal.length : 0;
+}
+
+function tick() {
+  const snapLen = shouldFireNow();
+  if (!snapLen) return;
+  const pending = accumulatedFinal.slice(committedSrcLen, snapLen).trim();
+  if (!pending) return;
+  translateIncremental(pending, snapLen);
+}
+
+// Estimated seconds we are behind the speaker = audio queue + un-translated source backlog.
+function getSecondsBehind() {
+  const audioQ = getQueuedAudioSec();
+  const srcCharsLeft = Math.max(0, accumulatedFinal.length - committedSrcLen);
+  // Heuristic: ~15 chars/sec speaking rate (Spanish ≈ 14, Ukrainian ≈ 13)
+  const srcSec = srcCharsLeft / 15;
+  return audioQ + srcSec;
+}
+
+// Map secondsBehind → target speed (smooth piecewise curve, capped at 1.55×).
+function targetSpeedFor(secondsBehind) {
+  if (secondsBehind < 1)  return 1.00;
+  if (secondsBehind < 3)  return 1.00 + (secondsBehind - 1)  * 0.05;   // 1.00 → 1.10
+  if (secondsBehind < 6)  return 1.10 + (secondsBehind - 3)  * 0.05;   // 1.10 → 1.25
+  if (secondsBehind < 10) return 1.25 + (secondsBehind - 6)  * 0.0375; // 1.25 → 1.40
+  return Math.min(1.55, 1.40 + (secondsBehind - 10) * 0.03);
+}
+
+function autoSpeedTick() {
+  if (!autoSpeedOn || !audioCtx) return;
+  const sb = getSecondsBehind();
+  const target = targetSpeedFor(sb);
+  // LERP toward target (15% per tick @ 250ms ⇒ time-constant ~1.5s)
+  const damp = 0.15;
+  playbackSpeed = playbackSpeed * (1 - damp) + target * damp;
+  setSpeedUI(playbackSpeed);
+  applySpeedToWorklet();
+}
+
+function pumpQueueMetric() {
+  $('mQueue').textContent = `${getQueuedAudioSec().toFixed(1)}s`;
+}
+
+// ===== Lifecycle =====
+async function start() {
+  if (SOURCE_LANG === TARGET_LANG) { log('[err] source and target must differ', 'err'); return; }
+  setLangsLocked(true);
+  $('startBtn').disabled = true;
+  $('stopBtn').disabled = false;
+  $('statusDot').classList.add('live');
+  $('srcStatus').textContent = 'connecting…';
+  $('tgtStatus').textContent = 'idle';
+
+  // Reset state
+  accumulatedFinal = ''; lastInterim = '';
+  committedSrcLen = 0; committedTrans = '';
+  chunkCount = 0; $('mChunks').textContent = '0';
+  $('mTrans').textContent = '—'; $('mTts').textContent = '—';
+  renderSource(); renderTarget();
+
+  await ensureAudio();
+
+  // Soniox token
+  const tokenRes = await fetch('/api/token');
+  if (!tokenRes.ok) { log('[token] failed', 'err'); return stop(); }
+  const { token } = await tokenRes.json();
+
+  // Open TTS WS first so it's ready when we get the first translation
+  try {
+    ttsWs = await openTtsWs(TARGET_LANG);
+  } catch (e) {
+    log(`[TTS-WS] failed: ${e.message}`, 'err');
+    return stop();
+  }
+
+  // Soniox — pass selected audio input deviceId via audioConstraints
+  sonioxClient = await getSonioxClient(token);
+  const audioConstraints = selectedDeviceId
+    ? { deviceId: { exact: selectedDeviceId }, echoCancellation: true, noiseSuppression: true }
+    : { echoCancellation: true, noiseSuppression: true };
+  await sonioxClient.start({
+    model: 'stt-rt-v4',
+    languageHints: [SOURCE_LANG],
+    audioConstraints,
+    enableLanguageIdentification: false,
+    onStarted: () => { $('srcStatus').textContent = 'live'; log('[Soniox] started', 'ok'); },
+    onPartialResult: ({ tokens }) => {
+      let finalChunk = '', interimChunk = '';
+      for (const t of tokens) {
+        if (t.text === '<end>') continue;
+        if (t.is_final) finalChunk += t.text;
+        else interimChunk += t.text;
+      }
+      // Drop wrong-script tokens at the source — Soniox may slip another language through hints.
+      const cleanFinal = filterToScript(finalChunk);
+      const cleanInterim = filterToScript(interimChunk);
+      if (finalChunk && !cleanFinal.trim()) {
+        log(`[script-skip] dropped final chunk "${finalChunk.trim()}"`);
+      }
+      if (cleanFinal) accumulatedFinal += cleanFinal;
+      lastInterim = cleanInterim;
+      renderSource();
+      // Aggressive trigger: any punctuation at end of cleaned final chunk → fire now
+      if (cleanFinal && PUNCT_TAIL_RE.test(cleanFinal)) tick();
+    },
+    onFinished: () => { $('srcStatus').textContent = 'finished'; log('[Soniox] finished'); },
+    onError: (status, message) => { log(`[Soniox] ${status} ${message}`, 'err'); },
+  });
+
+  isRunning = true;
+  tickHandle = setInterval(() => { tick(); pumpQueueMetric(); autoSpeedTick(); }, TICK_MS);
+}
+
+async function stop() {
+  isRunning = false;
+  if (tickHandle) { clearInterval(tickHandle); tickHandle = null; }
+
+  // Final flush of any remaining tail before closing TTS
+  const pending = getPendingSrc();
+  if (pending) {
+    try { await translateIncremental(pending, accumulatedFinal.length); } catch {}
+  }
+
+  $('startBtn').disabled = false;
+  $('stopBtn').disabled = true;
+  $('statusDot').classList.remove('live');
+  $('srcStatus').textContent = 'stopped';
+  $('tgtStatus').textContent = 'done';
+  setLangsLocked(false);
+
+  if (sonioxClient) { try { await sonioxClient.stop(); } catch {} sonioxClient = null; }
+  if (ttsWs) {
+    try { if (ttsWs.readyState === WebSocket.OPEN) ttsWs.send(JSON.stringify({ type: 'end' })); } catch {}
+    try { ttsWs.close(); } catch {}
+    ttsWs = null;
+  }
+  log('[stop] session ended');
+}
+
+$('startBtn').addEventListener('click', () => start().catch(e => { log(e.message, 'err'); stop(); }));
+$('stopBtn').addEventListener('click', () => stop());
+
+buildSelectors();
+setLangsLocked(false);
+// Initial enumerate without prompting; labels show only if permission was granted earlier in this origin.
+loadAudioDevices(false);
+</script>
+</body>
+</html>

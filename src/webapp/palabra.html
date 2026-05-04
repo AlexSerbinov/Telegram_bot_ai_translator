@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Palabra.ai Live ES→UK</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #151821;
+    --accent: #6366f1;
+    --accent2: #4ade80;
+    --muted: #6b7280;
+    --text: #e5e7eb;
+    --danger: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px 40px; min-height: 100vh;
+  }
+  header { text-align: center; margin-bottom: 16px; }
+  h1 { margin: 0; font-size: 22px; font-weight: 700; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .pipeline {
+    color: var(--muted); font-size: 11px; letter-spacing: 0.5px;
+    margin-top: 6px; font-family: ui-monospace, monospace;
+  }
+  .container { width: 100%; max-width: 720px; display: flex; flex-direction: column; gap: 14px; }
+  .card {
+    background: var(--panel); border-radius: 14px; padding: 18px 16px;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--muted); margin-bottom: 8px; display: flex; justify-content: space-between;
+  }
+  .text-area {
+    min-height: 80px; font-size: 17px; line-height: 1.4; white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .interim { color: var(--muted); font-style: italic; }
+  .final { color: var(--text); }
+  .target { color: var(--accent2); font-weight: 600; font-size: 19px; }
+  .controls { display: flex; gap: 10px; justify-content: center; margin: 6px 0; }
+  button {
+    background: var(--accent); color: #fff; font-weight: 700;
+    border: none; border-radius: 999px; padding: 14px 26px;
+    font-size: 15px; cursor: pointer; transition: 0.15s;
+  }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.stop { background: var(--danger); }
+  button:not(:disabled):hover { transform: translateY(-1px); }
+  .metrics {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+    font-family: ui-monospace, monospace; font-size: 13px;
+  }
+  .metric {
+    background: rgba(255,255,255,0.03); border-radius: 8px; padding: 10px;
+    text-align: center;
+  }
+  .metric .v { color: var(--accent); font-size: 18px; font-weight: 700; }
+  .metric .k { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; margin-top: 4px; }
+  .log {
+    font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted);
+    max-height: 160px; overflow-y: auto; line-height: 1.5;
+  }
+  .log .err { color: var(--danger); }
+  .log .ok { color: var(--accent2); }
+  .status {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted); margin-right: 6px; vertical-align: middle;
+  }
+  .status.live { background: var(--accent2); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .langs {
+    display: flex; gap: 10px; align-items: center; justify-content: center;
+    margin-bottom: 6px; flex-wrap: wrap;
+  }
+  .langs select {
+    background: var(--panel); color: var(--text);
+    border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+    padding: 8px 10px; font-size: 14px; font-family: inherit;
+    cursor: pointer;
+  }
+  .langs select:disabled { opacity: 0.5; cursor: not-allowed; }
+  .langs .arrow { color: var(--muted); font-weight: 700; }
+  .swap-btn {
+    background: transparent; color: var(--accent); border: 1px solid var(--accent);
+    border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 600;
+  }
+  .swap-btn:disabled { opacity: 0.4; }
+</style>
+</head>
+<body>
+  <header>
+    <h1 id="title">🇪🇸 → 🇺🇦 Palabra.ai Live</h1>
+    <div class="subtitle">Speech-to-speech via Palabra streaming API (WebRTC-class, &lt;1s claimed latency)</div>
+    <div class="pipeline">MIC → PCM 16kHz → PALABRA WS → TRANSCRIPT + AUDIO</div>
+  </header>
+
+  <div class="container">
+    <div class="langs">
+      <select id="srcLang"></select>
+      <span class="arrow">→</span>
+      <select id="tgtLang"></select>
+      <button id="swapBtn" class="swap-btn" type="button" title="Swap languages">⇄</button>
+    </div>
+
+    <div class="card">
+      <div class="label">
+        <span><span class="status" id="statusDot"></span><span id="srcLabel">Spanish</span> (live transcription)</span>
+        <span id="esStatus">idle</span>
+      </div>
+      <div class="text-area" id="esText">—</div>
+    </div>
+
+    <div class="controls">
+      <button id="startBtn">🎤 Start translating</button>
+      <button id="stopBtn" class="stop" disabled>■ Stop</button>
+    </div>
+
+    <div class="card">
+      <div class="label">
+        <span><span id="tgtLabel">Ukrainian</span> (translation + voice)</span>
+        <span id="ukStatus">—</span>
+      </div>
+      <div class="text-area target" id="ukText">—</div>
+    </div>
+
+    <div class="card">
+      <div class="label">Latency</div>
+      <div class="metrics">
+        <div class="metric"><div class="v" id="mFirstAudio">—</div><div class="k">First audio</div></div>
+        <div class="metric"><div class="v" id="mLastTrans">—</div><div class="k">Last translation</div></div>
+        <div class="metric"><div class="v" id="mAudioChunks">0</div><div class="k">Audio chunks</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Log</div>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const log = (msg, cls = '') => {
+  const el = $('log');
+  const line = document.createElement('div');
+  line.textContent = `${new Date().toLocaleTimeString()} ${msg}`;
+  if (cls) line.classList.add(cls);
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+};
+
+const SAMPLE_RATE = 16000;
+
+// Curated list of common ISO 639-1 codes — Palabra supports 60+ via 2-letter codes.
+// If a code is rejected at runtime, error will show in the log.
+const LANGS = [
+  { code: 'es', name: 'Spanish',    flag: '🇪🇸' },
+  { code: 'en', name: 'English',    flag: '🇺🇸' },
+  { code: 'ru', name: 'Russian',    flag: '🇷🇺' },
+  { code: 'uk', name: 'Ukrainian',  flag: '🇺🇦' },
+  { code: 'de', name: 'German',     flag: '🇩🇪' },
+  { code: 'fr', name: 'French',     flag: '🇫🇷' },
+  { code: 'it', name: 'Italian',    flag: '🇮🇹' },
+  { code: 'pt', name: 'Portuguese', flag: '🇵🇹' },
+  { code: 'pl', name: 'Polish',     flag: '🇵🇱' },
+  { code: 'tr', name: 'Turkish',    flag: '🇹🇷' },
+  { code: 'nl', name: 'Dutch',      flag: '🇳🇱' },
+  { code: 'cs', name: 'Czech',      flag: '🇨🇿' },
+  { code: 'ja', name: 'Japanese',   flag: '🇯🇵' },
+  { code: 'zh', name: 'Chinese',    flag: '🇨🇳' },
+  { code: 'ar', name: 'Arabic',     flag: '🇸🇦' },
+];
+const langByCode = (code) => LANGS.find(l => l.code === code);
+
+let SOURCE_LANG = 'es';
+let TARGET_LANG = 'uk';
+
+function buildSelectors() {
+  const src = $('srcLang');
+  const tgt = $('tgtLang');
+  for (const l of LANGS) {
+    src.add(new Option(`${l.flag}  ${l.name} (${l.code})`, l.code));
+    tgt.add(new Option(`${l.flag}  ${l.name} (${l.code})`, l.code));
+  }
+  src.value = SOURCE_LANG;
+  tgt.value = TARGET_LANG;
+  src.addEventListener('change', () => { SOURCE_LANG = src.value; updateHeader(); });
+  tgt.addEventListener('change', () => { TARGET_LANG = tgt.value; updateHeader(); });
+  $('swapBtn').addEventListener('click', () => {
+    const a = src.value, b = tgt.value;
+    src.value = b; tgt.value = a;
+    SOURCE_LANG = b; TARGET_LANG = a;
+    updateHeader();
+  });
+  updateHeader();
+}
+
+function updateHeader() {
+  const s = langByCode(SOURCE_LANG) || { flag: '🌐', name: SOURCE_LANG };
+  const t = langByCode(TARGET_LANG) || { flag: '🌐', name: TARGET_LANG };
+  $('title').textContent = `${s.flag} → ${t.flag} Palabra.ai Live`;
+  $('srcLabel').textContent = s.name;
+  $('tgtLabel').textContent = t.name;
+}
+
+function setLangsLocked(locked) {
+  $('srcLang').disabled = locked;
+  $('tgtLang').disabled = locked;
+  $('swapBtn').disabled = locked;
+}
+
+let ws = null;
+let audioCtx = null;
+let workletNode = null;
+let mediaStream = null;
+let sourceNode = null;
+let outputCtx = null;
+let nextPlayTime = 0;
+let sessionStartTs = 0;
+let firstAudioTs = 0;
+let lastFinalTransTs = 0;
+let audioChunkCount = 0;
+let outputSampleRate = 24000; // updated from set_task ack if provided
+
+function base64ToBuffer(b64) {
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
+
+function bufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let bin = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(bin);
+}
+
+function pcmInt16ToFloat32(buffer) {
+  const view = new DataView(buffer);
+  const samples = buffer.byteLength / 2;
+  const out = new Float32Array(samples);
+  for (let i = 0; i < samples; i++) out[i] = view.getInt16(i * 2, true) / 32768;
+  return out;
+}
+
+async function ensureOutputCtx(sr) {
+  if (!outputCtx || outputCtx.sampleRate !== sr) {
+    if (outputCtx) try { await outputCtx.close(); } catch {}
+    outputCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: sr });
+    nextPlayTime = outputCtx.currentTime;
+  }
+  if (outputCtx.state === 'suspended') await outputCtx.resume();
+}
+
+function playPcmChunk(arrayBuffer) {
+  const float = pcmInt16ToFloat32(arrayBuffer);
+  const buf = outputCtx.createBuffer(1, float.length, outputCtx.sampleRate);
+  buf.getChannelData(0).set(float);
+  const src = outputCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(outputCtx.destination);
+  const now = outputCtx.currentTime;
+  const startAt = Math.max(now, nextPlayTime);
+  src.start(startAt);
+  nextPlayTime = startAt + buf.duration;
+}
+
+function handleServerMessage(msg) {
+  const t = msg.message_type;
+  // Palabra protocol is documented loosely; accept several known keys
+  if (t === 'partial_transcription' || t === 'final_transcription') {
+    const text = msg.data?.transcription?.text ?? msg.data?.text ?? '';
+    if (!text) return;
+    if (t === 'partial_transcription') {
+      $('esText').innerHTML = `<span class="final">${pendingFinalEs}</span> <span class="interim">${text}</span>`;
+    } else {
+      pendingFinalEs += (pendingFinalEs ? ' ' : '') + text;
+      $('esText').innerHTML = `<span class="final">${pendingFinalEs}</span>`;
+    }
+  } else if (t === 'translated_transcription' || t === 'translation') {
+    const text = msg.data?.transcription?.text ?? msg.data?.text ?? '';
+    const isFinal = msg.data?.transcription?.segment_confirmed ?? msg.data?.is_final ?? (t === 'translation');
+    if (!text) return;
+    $('ukText').textContent = text;
+    if (isFinal) {
+      lastFinalTransTs = performance.now();
+      $('mLastTrans').textContent = `${Math.round(lastFinalTransTs - sessionStartTs)}ms`;
+      log(`[final UK] "${text.slice(0, 80)}"`, 'ok');
+    }
+  } else if (t === 'output_audio_data') {
+    const b64 = msg.data?.data ?? msg.data?.audio ?? '';
+    if (!b64) return;
+    const pcm = base64ToBuffer(b64);
+    if (!firstAudioTs) {
+      firstAudioTs = performance.now();
+      $('mFirstAudio').textContent = `${Math.round(firstAudioTs - sessionStartTs)}ms`;
+      log(`[first audio] in ${Math.round(firstAudioTs - sessionStartTs)}ms (${pcm.byteLength} bytes)`, 'ok');
+    }
+    audioChunkCount++;
+    $('mAudioChunks').textContent = audioChunkCount;
+    playPcmChunk(pcm);
+  } else if (t === 'current_task' || t === 'task_started' || t === 'pipeline_timings') {
+    log(`[server] ${t}`);
+  } else if (t === 'error' || t === 'pipeline_error') {
+    log(`[server-error] ${JSON.stringify(msg.data || {})}`, 'err');
+  } else {
+    log(`[server] ${t}: ${JSON.stringify(msg.data || {}).slice(0, 120)}`);
+  }
+}
+
+let pendingFinalEs = '';
+
+async function start() {
+  $('startBtn').disabled = true;
+  $('stopBtn').disabled = false;
+  $('statusDot').classList.add('live');
+  $('esStatus').textContent = 'requesting session...';
+  log('[start] requesting Palabra session');
+
+  pendingFinalEs = '';
+  audioChunkCount = 0;
+  firstAudioTs = 0;
+  lastFinalTransTs = 0;
+  $('mFirstAudio').textContent = '—';
+  $('mLastTrans').textContent = '—';
+  $('mAudioChunks').textContent = '0';
+  $('esText').textContent = '—';
+  $('ukText').textContent = '—';
+
+  let session;
+  try {
+    const r = await fetch('/api/palabra/session', { method: 'POST' });
+    if (!r.ok) throw new Error(`/api/palabra/session HTTP ${r.status}: ${await r.text()}`);
+    session = await r.json();
+  } catch (e) {
+    log(`[session-error] ${e.message}`, 'err');
+    return stop(true);
+  }
+  log(`[session] id=${session.id}, ws=${session.ws_url}`);
+
+  const wsUrl = `${session.ws_url}?token=${session.publisher}`;
+  ws = new WebSocket(wsUrl);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = async () => {
+    log('[ws] connected to Palabra');
+    $('esStatus').textContent = 'configuring...';
+    sessionStartTs = performance.now();
+
+    const setTask = {
+      message_type: 'set_task',
+      data: {
+        input_stream: {
+          content_type: 'audio',
+          source: { type: 'ws', format: 'pcm_s16le', sample_rate: SAMPLE_RATE, channels: 1 },
+        },
+        output_stream: {
+          content_type: 'audio',
+          target: { type: 'ws', format: 'pcm_s16le', sample_rate: outputSampleRate, channels: 1 },
+        },
+        pipeline: {
+          transcription: { source_language: SOURCE_LANG },
+          translations: [{ target_language: TARGET_LANG, speech_generation: {} }],
+        },
+      },
+    };
+    ws.send(JSON.stringify(setTask));
+    log('[ws] sent set_task');
+
+    try {
+      await ensureOutputCtx(outputSampleRate);
+      await startMicrophone();
+      $('esStatus').textContent = 'live';
+    } catch (e) {
+      log(`[mic-error] ${e.message}`, 'err');
+      stop(true);
+    }
+  };
+
+  ws.onmessage = (ev) => {
+    if (typeof ev.data === 'string') {
+      try { handleServerMessage(JSON.parse(ev.data)); }
+      catch (e) { log(`[parse-err] ${e.message}`, 'err'); }
+    } else {
+      // Some servers send raw binary audio; treat as PCM
+      if (!firstAudioTs) {
+        firstAudioTs = performance.now();
+        $('mFirstAudio').textContent = `${Math.round(firstAudioTs - sessionStartTs)}ms`;
+      }
+      audioChunkCount++;
+      $('mAudioChunks').textContent = audioChunkCount;
+      playPcmChunk(ev.data);
+    }
+  };
+
+  ws.onerror = (e) => log(`[ws-error] ${e.message || 'unknown'}`, 'err');
+  ws.onclose = (e) => {
+    log(`[ws-closed] code=${e.code} reason=${e.reason || '(none)'}`);
+    if (e.code !== 1000 && e.code !== 1005) stop(true);
+  };
+}
+
+async function startMicrophone() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+  if (Math.abs(audioCtx.sampleRate - SAMPLE_RATE) > 1) {
+    log(`[warn] AudioContext returned ${audioCtx.sampleRate} Hz instead of ${SAMPLE_RATE}`, 'err');
+  }
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+  mediaStream = await navigator.mediaDevices.getUserMedia({
+    audio: { sampleRate: SAMPLE_RATE, channelCount: 1, echoCancellation: true, noiseSuppression: true },
+  });
+  sourceNode = audioCtx.createMediaStreamSource(mediaStream);
+
+  const workletCode = `
+    class PCMWorklet extends AudioWorkletProcessor {
+      constructor() {
+        super();
+        this.buf = new Int16Array(0);
+        this.target = 1600; // 100ms @ 16kHz
+      }
+      process(inputs) {
+        const input = inputs[0][0];
+        if (!input) return true;
+        const merged = new Int16Array(this.buf.length + input.length);
+        merged.set(this.buf, 0);
+        for (let i = 0; i < input.length; i++) {
+          const s = Math.max(-1, Math.min(1, input[i]));
+          merged[this.buf.length + i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        if (merged.length >= this.target) {
+          this.port.postMessage(merged.buffer, [merged.buffer]);
+          this.buf = new Int16Array(0);
+        } else {
+          this.buf = merged;
+        }
+        return true;
+      }
+    }
+    registerProcessor('pcm-worklet', PCMWorklet);
+  `;
+  const blobUrl = URL.createObjectURL(new Blob([workletCode], { type: 'application/javascript' }));
+  await audioCtx.audioWorklet.addModule(blobUrl);
+  workletNode = new AudioWorkletNode(audioCtx, 'pcm-worklet');
+
+  workletNode.port.onmessage = (ev) => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const b64 = bufferToBase64(ev.data);
+    ws.send(JSON.stringify({
+      message_type: 'input_audio_data',
+      data: { data: b64 },
+    }));
+  };
+
+  sourceNode.connect(workletNode);
+  log('[mic] capturing PCM @ 16kHz, 100ms chunks');
+}
+
+async function stop(silent = false) {
+  $('startBtn').disabled = false;
+  $('stopBtn').disabled = true;
+  $('statusDot').classList.remove('live');
+  $('esStatus').textContent = 'stopped';
+  setLangsLocked(false);
+
+  try { workletNode?.disconnect(); } catch {}
+  try { sourceNode?.disconnect(); } catch {}
+  try { mediaStream?.getTracks().forEach(t => t.stop()); } catch {}
+  try { await audioCtx?.close(); } catch {}
+  audioCtx = null; workletNode = null; sourceNode = null; mediaStream = null;
+
+  try { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ message_type: 'end_task', data: {} })); } catch {}
+  try { ws?.close(1000); } catch {}
+  ws = null;
+
+  if (!silent) log('[stop] session ended');
+}
+
+$('startBtn').addEventListener('click', () => {
+  if (SOURCE_LANG === TARGET_LANG) { log('[err] source and target must differ', 'err'); return; }
+  setLangsLocked(true);
+  start().catch(e => { log(e.message, 'err'); stop(true); });
+});
+$('stopBtn').addEventListener('click', () => stop());
+
+buildSelectors();
+setLangsLocked(false);
+</script>
+</body>
+</html>
