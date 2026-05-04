@@ -1,23 +1,20 @@
 /**
- * Persistent Soniox TTS WebSocket session — drop-in alternative to ttsEleven.js.
+ * Persistent Soniox TTS WebSocket session — alternative provider to ttsEleven.js.
  *
- * Same EventEmitter shape as ElevenSession so LiveTranslatorSession can swap providers.
+ * Soniox TTS is a *multi-stream* protocol: one WS connection can host many
+ * concurrent or sequential streams, each with its own stream_id. There is NO
+ * persistent "input stream" the way ElevenLabs streaming-input has. Each
+ * synthesis request must:
+ *   1. Send a config (api_key + stream_id + model + voice + ...) to open a sub-stream
+ *   2. Send text + text_end:true on that same stream_id
+ *   3. Server returns audio frames + a final { terminated:true } for that stream_id
+ * The connection stays open and we open a fresh sub-stream per chunk().
+ *
  * Endpoint: wss://tts-rt.soniox.com/tts-websocket
+ * Voice "Maya" (or any of the 12 Soniox voices) is inherently multilingual; we
+ * pass `language` per sub-stream just for pronunciation hint.
  *
- * Wire protocol:
- *   1. Send initial JSON config (api_key + model + voice + language + audio_format)
- *   2. For each new translation chunk → { text, text_end:false, stream_id }
- *   3. To close → { text:'', text_end:true, stream_id }
- *   4. Server returns { audio:<base64 PCM s16le>, audio_end, stream_id } repeatedly,
- *      then a terminal { terminated:true, stream_id } before closing.
- *
- * Voice selection: every Soniox voice handles all 60+ languages with consistent timbre,
- * so we don't need a per-language voice table. We pass `language` per session for
- * pronunciation hint; voice stays the same.
- *
- * Note: Soniox TTS API does NOT expose a server-side speed parameter. Speed is
- * applied client-side via playbackRate (already done in the Mini App). setSpeed() is a
- * no-op here — kept for interface parity with ElevenSession.
+ * No server-side speed control — `setSpeed()` is a no-op for interface parity.
  */
 const EventEmitter = require('events');
 const WebSocket = require('ws');
@@ -34,12 +31,11 @@ class SonioxTtsSession extends EventEmitter {
     this.model = model;
     this.voice = voice;
     this.language = language;
-    this.streamId = 'live-' + crypto.randomBytes(6).toString('hex');
     this.ws = null;
     this.ready = false;
-    this.pending = [];
-    this.chunkStartTs = 0;
-    this.firstByteSent = false;
+    this.pending = [];                        // chunks queued before WS handshake done
+    this.startTsByStream = new Map();         // stream_id → ts of opening (for first-byte)
+    this.firstByteSentByStream = new Set();   // streams whose first-byte has been emitted
     this.closed = false;
   }
 
@@ -50,19 +46,9 @@ class SonioxTtsSession extends EventEmitter {
 
       ws.on('open', () => {
         if (this.closed) { try { ws.close(); } catch {} return; }
-        const config = {
-          api_key: this.apiKey,
-          stream_id: this.streamId,
-          model: this.model,
-          voice: this.voice,
-          language: this.language,
-          audio_format: 'pcm_s16le',
-          sample_rate: SAMPLE_RATE,
-        };
-        try { ws.send(JSON.stringify(config)); }
-        catch (e) { reject(e); return; }
         this.ready = true;
-        for (const t of this.pending) this._sendChunkRaw(t);
+        // Flush any chunks that arrived during handshake
+        for (const t of this.pending) this._openSubStream(t);
         this.pending = [];
         resolve();
       });
@@ -76,17 +62,22 @@ class SonioxTtsSession extends EventEmitter {
           this.emit('error', { message: `${payload.error_code || ''}: ${payload.error_message || JSON.stringify(payload)}` });
           return;
         }
+
         if (payload.audio) {
           const buf = Buffer.from(payload.audio, 'base64');
-          if (!this.firstByteSent && this.chunkStartTs) {
-            const latencyMs = Date.now() - this.chunkStartTs;
+          const sid = payload.stream_id;
+          const startTs = sid ? this.startTsByStream.get(sid) : null;
+          if (startTs && sid && !this.firstByteSentByStream.has(sid)) {
+            const latencyMs = Date.now() - startTs;
             this.emit('first-byte', { latencyMs });
-            this.firstByteSent = true;
+            this.firstByteSentByStream.add(sid);
           }
           this.emit('audio', buf);
         }
-        if (payload.terminated) {
-          // Soniox confirms end-of-stream
+
+        if (payload.terminated && payload.stream_id) {
+          this.startTsByStream.delete(payload.stream_id);
+          this.firstByteSentByStream.delete(payload.stream_id);
         }
       });
 
@@ -95,36 +86,50 @@ class SonioxTtsSession extends EventEmitter {
     });
   }
 
-  /** Flush a translated text chunk; queue if upstream not ready. */
+  /**
+   * Synthesize one text chunk as a fresh Soniox sub-stream.
+   * Stream_id is unique per chunk; many can be in flight concurrently.
+   */
   chunk(text) {
     const trimmed = (text || '').trim();
     if (!trimmed || this.closed) return;
     if (!this.ready) { this.pending.push(trimmed); return; }
-    this._sendChunkRaw(trimmed);
+    this._openSubStream(trimmed);
   }
 
-  _sendChunkRaw(text) {
-    this.chunkStartTs = Date.now();
-    this.firstByteSent = false;
+  _openSubStream(text) {
+    const streamId = 'live-' + Date.now().toString(36) + '-' + crypto.randomBytes(3).toString('hex');
+    this.startTsByStream.set(streamId, Date.now());
+
     try {
+      // 1) config (= "start") for this sub-stream
+      this.ws.send(JSON.stringify({
+        api_key: this.apiKey,
+        stream_id: streamId,
+        model: this.model,
+        voice: this.voice,
+        language: this.language,
+        audio_format: 'pcm_s16le',
+        sample_rate: SAMPLE_RATE,
+      }));
+      // 2) text + text_end on the same stream_id (one-shot per chunk)
       this.ws.send(JSON.stringify({
         text: text + ' ',
-        text_end: false,
-        stream_id: this.streamId,
+        text_end: true,
+        stream_id: streamId,
       }));
     } catch (e) {
-      this.emit('error', { message: 'chunk send: ' + e.message });
+      this.emit('error', { message: 'sub-stream send: ' + e.message });
     }
   }
 
-  /** No server-side speed control; kept for interface parity. */
+  /** No server-side speed; kept for interface parity with ElevenSession. */
   setSpeed(_value) { /* no-op */ }
 
   close() {
     if (this.closed) return;
     this.closed = true;
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      try { this.ws.send(JSON.stringify({ text: '', text_end: true, stream_id: this.streamId })); } catch {}
       try { this.ws.close(); } catch {}
     }
   }
