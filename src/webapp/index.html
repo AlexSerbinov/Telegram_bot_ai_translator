@@ -680,6 +680,8 @@
        =================================================================== */
     .app { padding-bottom: calc(72px + env(safe-area-inset-bottom, 0)); }
     .tab-content[hidden] { display: none !important; }
+    /* Force [hidden] to win over .live-langs/.live-controls' display:flex (higher specificity). */
+    #liveTtsRow[hidden], #liveContinueRow[hidden] { display: none !important; }
     .bottom-nav {
       position: fixed; left: 0; right: 0; bottom: 0;
       background: rgba(255,255,255,0.94);
