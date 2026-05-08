@@ -804,7 +804,11 @@
     <div id="mainContent" style="display:none">
       <div class="app-title" id="appTitle">Voice Translator</div>
       <!-- Bump APP_VERSION on every commit so cache busts are visible to user. -->
-      <div class="app-version" id="appVersion">build · 2026-05-08 · v3</div>
+      <div class="app-version" id="appVersion">build · 2026-05-08 · v4</div>
+      <!-- OpenAI session live-cost guard: visible session timer + state. -->
+      <div id="oaSessionBar" hidden style="text-align:center;padding:6px 10px;margin-bottom:10px;background:rgba(229,57,53,0.08);border:1px solid rgba(229,57,53,0.25);border-radius:10px;font-size:12px;font-family:ui-monospace,monospace;color:var(--recording);font-weight:700;letter-spacing:0.3px">
+        🔴 OpenAI LIVE — <span id="oaSessionElapsed">0:00</span>
+      </div>
 
       <!-- ==================== VOICE TAB (legacy one-shot flow) ==================== -->
       <div class="tab-content" data-tab="voice">
@@ -2625,6 +2629,7 @@
             $('liveSrcStatus').textContent = 'live';
             state.oaSessionStartedAt = Date.now();
             openaiArmTimers();
+            startOpenAISessionTimer();
             // Periodic stats: see if audio bytes are actually flowing both ways.
             startOpenAIStats();
           };
@@ -2692,6 +2697,44 @@
         }
       }
 
+      // ----- Live session UI (visible "🔴 LIVE 0:42" badge to scare user when running) -----
+      let oaSessionTimer = null;
+      function startOpenAISessionTimer() {
+        const bar = document.getElementById('oaSessionBar');
+        const el = document.getElementById('oaSessionElapsed');
+        if (bar) bar.hidden = false;
+        const tick = () => {
+          if (!state.oaSessionStartedAt || !el) return;
+          const sec = Math.floor((Date.now() - state.oaSessionStartedAt) / 1000);
+          el.textContent = `${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}`;
+        };
+        tick();
+        if (oaSessionTimer) clearInterval(oaSessionTimer);
+        oaSessionTimer = setInterval(tick, 500);
+      }
+      function stopOpenAISessionTimer() {
+        if (oaSessionTimer) { clearInterval(oaSessionTimer); oaSessionTimer = null; }
+        const bar = document.getElementById('oaSessionBar');
+        if (bar) bar.hidden = true;
+      }
+
+      // Cost guard: kill any live OpenAI session the moment the Mini App is
+      // backgrounded or the page becomes hidden. iOS Telegram WebView can
+      // keep the WebRTC peer alive for a while after swipe-down — that bills.
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden && state.running && state.engine === 'openai') {
+          log('[guard] page hidden — auto-stopping OpenAI session to save $$', 'err');
+          stop();
+        }
+      });
+      window.addEventListener('pagehide', () => {
+        if (state.running && state.engine === 'openai') {
+          try { state.oaPc?.close(); } catch {}
+          try { state.oaDc?.close(); } catch {}
+          try { state.oaStream?.getTracks().forEach(t => t.stop()); } catch {}
+        }
+      });
+
       // Periodic getStats — surface "is RTP actually flowing?" in the log so
       // we can tell mic-blocked-by-iOS from no-VAD-trigger from no-output.
       let oaStatsTimer = null;
@@ -2721,6 +2764,7 @@
       function stopOpenAI() {
         openaiClearTimers();
         if (oaStatsTimer) { clearInterval(oaStatsTimer); oaStatsTimer = null; }
+        stopOpenAISessionTimer();
         const row = document.getElementById('liveContinueRow');
         if (row) row.hidden = true;
         try { state.oaDc?.close(); } catch {}
