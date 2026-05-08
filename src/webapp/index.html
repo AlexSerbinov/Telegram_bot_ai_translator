@@ -47,8 +47,18 @@
       font-size: 17px;
       font-weight: 600;
       color: var(--text-primary);
-      padding: 8px 0 22px;
+      padding: 8px 0 4px;
       letter-spacing: -0.3px;
+    }
+    .app-version {
+      text-align: center;
+      font-size: 10px;
+      color: var(--text-hint);
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      letter-spacing: 0.5px;
+      padding-bottom: 18px;
+      user-select: text;
+      -webkit-user-select: text;
     }
 
     /* ===== Language Selector ===== */
@@ -793,6 +803,8 @@
     <!-- Main content -->
     <div id="mainContent" style="display:none">
       <div class="app-title" id="appTitle">Voice Translator</div>
+      <!-- Bump APP_VERSION on every commit so cache busts are visible to user. -->
+      <div class="app-version" id="appVersion">build · 2026-05-08 · v3</div>
 
       <!-- ==================== VOICE TAB (legacy one-shot flow) ==================== -->
       <div class="tab-content" data-tab="voice">
@@ -2375,6 +2387,11 @@
               <div class="label">Log</div>
               <div class="live-log" id="liveLog"></div>
             </div>
+
+            <!-- Audio sink for OpenAI Realtime engine.
+                 Must be in DOM for iOS Telegram WebView to allow playback.
+                 Also need <audio playsinline> + autoplay + muted-then-unmute pattern. -->
+            <audio id="liveOaAudio" playsinline autoplay style="display:none"></audio>
           </div>
         `;
         $('liveSrc').value = state.sourceLang;
@@ -2551,12 +2568,33 @@
           state.running = true;
           $('liveStartBtn').classList.add('live');
           $('liveSrcStatus').textContent = 'connecting…';
-          log('[openai] requesting mic…');
 
+          // Use the in-DOM <audio> element. iOS Telegram WebView ignores
+          // playback from orphan `new Audio()` instances. Also "warm up" the
+          // element synchronously while we're still close to the user gesture
+          // so future .play() with srcObject is allowed.
+          state.oaAudioEl = document.getElementById('liveOaAudio');
+          if (state.oaAudioEl) {
+            try {
+              state.oaAudioEl.muted = false;
+              state.oaAudioEl.volume = 1.0;
+              // Touch .play() once with no source to keep gesture context.
+              const p = state.oaAudioEl.play();
+              if (p && p.catch) p.catch(() => {});
+            } catch {}
+          }
+
+          log('[openai] requesting mic…');
           state.oaStream = await navigator.mediaDevices.getUserMedia({
             audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
             video: false,
           });
+          const micTrack = state.oaStream.getAudioTracks()[0];
+          if (micTrack) {
+            log(`[openai] mic track: ready=${micTrack.readyState}, enabled=${micTrack.enabled}, muted=${micTrack.muted}, label="${micTrack.label}"`, 'ok');
+          } else {
+            log('[openai] WARN: getUserMedia returned no audio track', 'err');
+          }
 
           log(`[openai] creating session (target=${state.targetLang})…`);
           const sessRes = await fetch('/api/realtime/session', {
@@ -2569,15 +2607,17 @@
           log(`[openai] session ok, model=${sess.model}`, 'ok');
 
           state.oaPc = new RTCPeerConnection();
-          state.oaAudioEl = new Audio();
-          state.oaAudioEl.autoplay = true;
-          state.oaAudioEl.playsInline = true;
-          state.oaPc.ontrack = ({ streams }) => {
-            log('[openai] remote track received', 'ok');
-            state.oaAudioEl.srcObject = streams[0];
-            state.oaAudioEl.play().catch(e => log(`[openai] play err: ${e.message}`, 'err'));
+
+          state.oaPc.ontrack = ({ streams, track }) => {
+            log(`[openai] remote track: kind=${track.kind}, ready=${track.readyState}`, 'ok');
+            if (state.oaAudioEl) {
+              state.oaAudioEl.srcObject = streams[0];
+              const p = state.oaAudioEl.play();
+              if (p && p.catch) p.catch(e => log(`[openai] play err: ${e.message} — tap mic again to unblock`, 'err'));
+            }
           };
           state.oaPc.onconnectionstatechange = () => log(`[openai] pc: ${state.oaPc?.connectionState}`);
+          state.oaPc.oniceconnectionstatechange = () => log(`[openai] ice: ${state.oaPc?.iceConnectionState}`);
 
           state.oaDc = state.oaPc.createDataChannel('oai-events');
           state.oaDc.onopen = () => {
@@ -2585,37 +2625,50 @@
             $('liveSrcStatus').textContent = 'live';
             state.oaSessionStartedAt = Date.now();
             openaiArmTimers();
+            // Periodic stats: see if audio bytes are actually flowing both ways.
+            startOpenAIStats();
           };
           state.oaDc.onmessage = (m) => {
             let evt; try { evt = JSON.parse(m.data); } catch { return; }
+            // Verbose: log every event type so we can see what OpenAI sends.
+            const preview = evt.delta ? ` delta="${String(evt.delta).slice(0, 40)}"` : '';
+            log(`[oa-evt] ${evt.type}${preview}`);
             switch (evt.type) {
               case 'session.input_transcript.delta':
+              case 'conversation.item.input_audio_transcription.delta':
                 if (typeof evt.delta === 'string') {
                   state.srcInterim = (state.srcInterim || '') + evt.delta;
                   renderSource();
                 }
                 break;
               case 'session.input_transcript.completed':
+              case 'conversation.item.input_audio_transcription.completed':
                 state.srcAccumulated += (state.srcInterim || '') + ' ';
                 state.srcInterim = '';
                 renderSource();
                 break;
               case 'session.output_transcript.delta':
+              case 'response.output_transcript.delta':
+              case 'response.audio_transcript.delta':
                 if (typeof evt.delta === 'string') {
                   state.tgtCommitted = (state.tgtCommitted || '') + evt.delta;
                   renderTarget();
                 }
                 break;
               case 'session.output_transcript.completed':
+              case 'response.output_transcript.completed':
+              case 'response.audio_transcript.done':
                 state.tgtCommitted = (state.tgtCommitted || '') + ' ';
                 renderTarget();
                 break;
               case 'error':
-                log(`[openai-evt] error: ${JSON.stringify(evt.error || evt)}`, 'err');
+                log(`[oa-evt] ERROR: ${JSON.stringify(evt.error || evt)}`, 'err');
                 break;
             }
           };
 
+          // Add the mic track AND an explicit recv-only audio transceiver so
+          // the answer SDP unambiguously offers an inbound audio track.
           for (const track of state.oaStream.getAudioTracks()) {
             state.oaPc.addTrack(track, state.oaStream);
           }
@@ -2639,14 +2692,42 @@
         }
       }
 
+      // Periodic getStats — surface "is RTP actually flowing?" in the log so
+      // we can tell mic-blocked-by-iOS from no-VAD-trigger from no-output.
+      let oaStatsTimer = null;
+      function startOpenAIStats() {
+        if (oaStatsTimer) clearInterval(oaStatsTimer);
+        let prevOut = 0, prevIn = 0;
+        oaStatsTimer = setInterval(async () => {
+          if (!state.oaPc || state.oaPc.connectionState !== 'connected') return;
+          try {
+            const stats = await state.oaPc.getStats();
+            let outBytes = 0, inBytes = 0, outPackets = 0, inPackets = 0;
+            stats.forEach(s => {
+              if (s.type === 'outbound-rtp' && s.kind === 'audio') {
+                outBytes = s.bytesSent || 0; outPackets = s.packetsSent || 0;
+              }
+              if (s.type === 'inbound-rtp' && s.kind === 'audio') {
+                inBytes = s.bytesReceived || 0; inPackets = s.packetsReceived || 0;
+              }
+            });
+            const dOut = outBytes - prevOut, dIn = inBytes - prevIn;
+            log(`[stats] mic↑ ${dOut}B (${outPackets}p), audio↓ ${dIn}B (${inPackets}p)`);
+            prevOut = outBytes; prevIn = inBytes;
+          } catch {}
+        }, 3000);
+      }
+
       function stopOpenAI() {
         openaiClearTimers();
+        if (oaStatsTimer) { clearInterval(oaStatsTimer); oaStatsTimer = null; }
         const row = document.getElementById('liveContinueRow');
         if (row) row.hidden = true;
         try { state.oaDc?.close(); } catch {}
         try { state.oaPc?.close(); } catch {}
         try { state.oaStream?.getTracks().forEach(t => t.stop()); } catch {}
         if (state.oaAudioEl) { try { state.oaAudioEl.pause(); state.oaAudioEl.srcObject = null; } catch {} }
+        // NB: keep DOM <audio> element; reuse on next start. Just null the local ref.
         state.oaDc = state.oaPc = state.oaStream = state.oaAudioEl = null;
       }
 

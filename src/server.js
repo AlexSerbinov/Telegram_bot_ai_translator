@@ -23,8 +23,15 @@ function createServer() {
   const app = express();
   app.use(express.json());
 
-  // Serve Mini App static files
-  app.use('/webapp', express.static(path.join(__dirname, 'webapp')));
+  // Serve Mini App static files. Disable caching so fresh HTML/JS is fetched
+  // every time — iOS Telegram WebView holds onto old versions otherwise.
+  app.use('/webapp', express.static(path.join(__dirname, 'webapp'), {
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    },
+  }));
 
   // Generate single-use STT token (provider-dependent)
   app.get('/api/token', async (req, res) => {
