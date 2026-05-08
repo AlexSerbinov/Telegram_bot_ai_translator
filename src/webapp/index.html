@@ -804,7 +804,7 @@
     <div id="mainContent" style="display:none">
       <div class="app-title" id="appTitle">Voice Translator</div>
       <!-- Bump APP_VERSION on every commit so cache busts are visible to user. -->
-      <div class="app-version" id="appVersion">build · 2026-05-08 · v10</div>
+      <div class="app-version" id="appVersion">build · 2026-05-08 · v11</div>
 
       <!-- ==================== VOICE TAB (legacy one-shot flow) ==================== -->
       <div class="tab-content" data-tab="voice">
@@ -2770,8 +2770,20 @@
         bindControls();
         loadAudioDevices(false);
         // Module-level guards (registered once, persist across sessions).
+        // Telegram WebView occasionally fires visibilitychange spuriously (keyboard,
+        // gestures, status bar pull). Use a 5s grace window before killing — if
+        // the page is still hidden after that, assume real backgrounding.
+        let hiddenKillTimer = null;
         document.addEventListener('visibilitychange', () => {
-          if (document.hidden && state.running) hardStop('hidden');
+          if (document.hidden && state.running) {
+            log('[guard] page hidden — 5s grace before auto-stop');
+            hiddenKillTimer = setTimeout(() => {
+              if (document.hidden && state.running) hardStop('hidden-5s');
+            }, 5000);
+          } else if (!document.hidden && hiddenKillTimer) {
+            clearTimeout(hiddenKillTimer); hiddenKillTimer = null;
+            log('[guard] visible again — kill cancelled', 'ok');
+          }
         });
         window.addEventListener('pagehide', () => { if (state.running) hardStop('pagehide'); });
         window.addEventListener('beforeunload', () => { if (state.running) hardStop('unload'); });
@@ -3017,7 +3029,10 @@
         state.pc.onconnectionstatechange = () => {
           const cs = state.pc?.connectionState;
           log(`[openai] pc: ${cs}`);
-          if (cs === 'failed' || cs === 'disconnected') hardStop('pc:' + cs);
+          // Only kill on TRUE failures. 'disconnected' is transient (network blip)
+          // and usually recovers on its own within ~1-2s — killing on it caused
+          // mid-session drops on the Translation API which dips through 'disconnected'.
+          if (cs === 'failed' || cs === 'closed') hardStop('pc:' + cs);
         };
         state.pc.oniceconnectionstatechange = () => log(`[openai] ice: ${state.pc?.iceConnectionState}`);
 
@@ -3344,8 +3359,18 @@ Rules:
         renderShell();
         bindControls();
         loadAudioDevices(false);
+        // 5s grace window for visibilitychange (matches Realtime tab — same reasoning).
+        let hiddenKillTimer = null;
         document.addEventListener('visibilitychange', () => {
-          if (document.hidden && state.running) hardStop('hidden');
+          if (document.hidden && state.running) {
+            log('[guard] page hidden — 5s grace before auto-stop');
+            hiddenKillTimer = setTimeout(() => {
+              if (document.hidden && state.running) hardStop('hidden-5s');
+            }, 5000);
+          } else if (!document.hidden && hiddenKillTimer) {
+            clearTimeout(hiddenKillTimer); hiddenKillTimer = null;
+            log('[guard] visible again — kill cancelled', 'ok');
+          }
         });
         window.addEventListener('pagehide', () => { if (state.running) hardStop('pagehide'); });
         window.addEventListener('beforeunload', () => { if (state.running) hardStop('unload'); });
@@ -3625,7 +3650,9 @@ Rules:
           const cs = state.pc?.connectionState;
           log(`[chat] pc: ${cs}`);
           $id('chConnStatus').textContent = cs;
-          if (cs === 'failed' || cs === 'disconnected') hardStop('pc:' + cs);
+          // Only kill on TRUE failures. 'disconnected' is transient and usually
+          // recovers — killing on it would cause premature mid-session drops.
+          if (cs === 'failed' || cs === 'closed') hardStop('pc:' + cs);
         };
         state.pc.oniceconnectionstatechange = () => log(`[chat] ice: ${state.pc?.iceConnectionState}`);
 
