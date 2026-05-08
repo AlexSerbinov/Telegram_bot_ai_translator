@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OpenAI gpt-realtime — Voice Chat (test)</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #151821;
+    --accent: #8b5cf6;
+    --accent2: #a78bfa;
+    --muted: #6b7280;
+    --text: #e5e7eb;
+    --danger: #ef4444;
+    --ok: #4ade80;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px 40px; min-height: 100vh;
+  }
+  header { text-align: center; margin-bottom: 16px; }
+  h1 { margin: 0; font-size: 22px; font-weight: 700; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .pipeline {
+    color: var(--muted); font-size: 11px; letter-spacing: 0.5px;
+    margin-top: 6px; font-family: ui-monospace, monospace;
+  }
+  .container { width: 100%; max-width: 760px; display: flex; flex-direction: column; gap: 14px; }
+  .row {
+    display: flex; gap: 10px; align-items: center; justify-content: center;
+    flex-wrap: wrap;
+  }
+  .row label { font-size: 12px; color: var(--muted); }
+  select, input[type=text], textarea {
+    background: var(--panel); color: var(--text);
+    border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+    padding: 8px 10px; font-size: 13px; font-family: inherit;
+  }
+  select:disabled, textarea:disabled { opacity: 0.5; cursor: not-allowed; }
+  textarea {
+    width: 100%; min-height: 70px; resize: vertical; line-height: 1.4;
+  }
+  .refresh-btn {
+    background: transparent; color: var(--muted); border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+  }
+  .card {
+    background: var(--panel); border-radius: 14px; padding: 16px;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--muted); margin-bottom: 8px; display: flex; justify-content: space-between;
+  }
+  .controls { display: flex; gap: 10px; justify-content: center; margin: 6px 0; }
+  button {
+    background: var(--accent); color: #fff; font-weight: 700;
+    border: none; border-radius: 999px; padding: 14px 26px;
+    font-size: 15px; cursor: pointer; transition: 0.15s;
+  }
+  button.send {
+    background: rgba(139,92,246,0.15); color: var(--accent2);
+    border: 1px solid var(--accent); padding: 8px 18px; font-size: 13px;
+  }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.stop { background: var(--danger); color: #fff; }
+  button:not(:disabled):hover { transform: translateY(-1px); }
+  .transcript {
+    display: flex; flex-direction: column; gap: 10px;
+    max-height: 360px; overflow-y: auto; padding: 4px;
+  }
+  .msg {
+    border-radius: 10px; padding: 10px 12px; line-height: 1.4;
+    font-size: 14px; white-space: pre-wrap; word-break: break-word;
+  }
+  .msg.user { background: rgba(139,92,246,0.12); border: 1px solid rgba(139,92,246,0.3); }
+  .msg.assistant { background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.25); }
+  .msg .who {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--muted); margin-bottom: 4px;
+  }
+  .metrics {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px;
+    font-family: ui-monospace, monospace; font-size: 13px;
+  }
+  .metric {
+    background: rgba(255,255,255,0.03); border-radius: 8px; padding: 10px;
+    text-align: center;
+  }
+  .metric .v { color: var(--accent2); font-size: 16px; font-weight: 700; }
+  .metric .k { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; margin-top: 4px; }
+  .log {
+    font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted);
+    max-height: 160px; overflow-y: auto; line-height: 1.5;
+  }
+  .log .err { color: var(--danger); }
+  .log .ok { color: var(--ok); }
+  .status {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted); margin-right: 6px; vertical-align: middle;
+  }
+  .status.live { background: var(--ok); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .meter { width: 100%; max-width: 420px; height: 6px; background: rgba(255,255,255,0.06);
+           border-radius: 999px; overflow: hidden; margin-top: 8px; }
+  .meter-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.08s linear; }
+  .send-row { display: flex; gap: 8px; margin-top: 10px; }
+  .send-row input[type=text] { flex: 1; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>🎙 gpt-realtime — Voice Chat</h1>
+    <div class="subtitle">
+      Conversational mode (НЕ translate). Розмова з AI асистентом голосом + текстом.
+    </div>
+    <div class="pipeline">MIC → WebRTC → OpenAI gpt-realtime → AUDIO + EVENTS</div>
+  </header>
+
+  <div class="container">
+
+    <div class="card">
+      <div class="label">Session config</div>
+      <div class="row" style="margin-bottom: 10px;">
+        <label for="voice">🗣 Voice:</label>
+        <select id="voice">
+          <option value="marin">marin (default, warm female)</option>
+          <option value="cedar">cedar (deep male)</option>
+          <option value="alloy">alloy</option>
+          <option value="ash">ash</option>
+          <option value="ballad">ballad</option>
+          <option value="coral">coral</option>
+          <option value="echo">echo</option>
+          <option value="sage">sage</option>
+          <option value="shimmer">shimmer</option>
+          <option value="verse">verse</option>
+        </select>
+        <label for="lang">🌐 Input lang hint:</label>
+        <select id="lang">
+          <option value="">auto-detect</option>
+          <option value="uk">Ukrainian</option>
+          <option value="es">Spanish</option>
+          <option value="en">English</option>
+          <option value="ru">Russian</option>
+          <option value="de">German</option>
+          <option value="fr">French</option>
+          <option value="it">Italian</option>
+          <option value="pt">Portuguese</option>
+        </select>
+        <label for="transcriptionModel">📝 Transcribe:</label>
+        <select id="transcriptionModel" title="STT model used for the input transcript shown in the chat (does NOT affect how gpt-realtime understands you)">
+          <option value="gpt-4o-transcribe" selected>gpt-4o-transcribe (accurate)</option>
+          <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe (fast)</option>
+          <option value="whisper-1">whisper-1 (legacy)</option>
+        </select>
+      </div>
+      <div style="margin-bottom: 8px;">
+        <div class="label" style="margin-bottom: 4px;">Instructions (system prompt)</div>
+        <textarea id="instructions" placeholder="Custom system prompt for the model.">You are a live voice translator between two speakers: one speaks Ukrainian, the other speaks Spanish. You are an invisible translation channel — nothing more.
+
+Rules:
+1. Wait for the speaker to finish their phrase before translating. Do not start mid-sentence.
+2. If you hear Ukrainian → output Spanish. If you hear Spanish → output Ukrainian. Strictly.
+3. Output ONLY the translation. No prefixes, no commentary, no acknowledgements, no questions.
+4. Do not engage in conversation. You are a translator, not an assistant.
+5. Preserve tone, register and emotion of the original.
+6. If the audio is unclear or silent — stay silent.</textarea>
+      </div>
+      <div class="row">
+        <label for="micDevice">🎙 Microphone:</label>
+        <select id="micDevice"><option value="">Default</option></select>
+        <button id="refreshDevicesBtn" class="refresh-btn" type="button" title="Refresh device list">↻</button>
+      </div>
+
+      <div class="row" style="margin-top: 10px; gap: 16px;">
+        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+          <input id="roomMode" type="checkbox" />
+          <span>🔊 Room mode (multi-speaker / pick up YouTube etc.)</span>
+        </label>
+        <label for="vadThreshold">VAD sensitivity:</label>
+        <input id="vadThreshold" type="range" min="0.1" max="0.9" step="0.05" value="0.5" style="width: 140px;" />
+        <span id="vadValue" style="font-family: ui-monospace, monospace; color: var(--accent2); min-width: 36px;">0.50</span>
+      </div>
+      <div style="font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5;">
+        <b>Room mode</b> вимикає browser echoCancellation/noiseSuppression/autoGainControl
+        (інакше Chrome віднімає аудіо колонок з мікрофону) і знімає server-side
+        <code>noise_reduction</code>. Для чистого фідингу YouTube краще
+        використати virtual audio device (BlackHole/Loopback на Mac).<br>
+        <b>VAD sensitivity</b>: нижче = модель тригерить відповідь на тихіше аудіо
+        (0.3 для далекого голосу, 0.5 default, 0.7 тільки чітка близька мова).
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="startBtn">🎤 Start chat</button>
+      <button id="stopBtn" class="stop" disabled>■ Stop</button>
+    </div>
+
+    <div class="card">
+      <div class="label">
+        <span><span class="status" id="statusDot"></span> Conversation</span>
+        <span id="connStatus">idle</span>
+      </div>
+      <div class="transcript" id="transcript"></div>
+      <div class="meter"><div class="meter-fill" id="meterFill"></div></div>
+
+      <div class="send-row">
+        <input id="textInput" type="text" placeholder="…або напиши текстом і натисни Send (Enter)" disabled />
+        <button id="sendBtn" class="send" type="button" disabled>Send</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Diagnostics</div>
+      <div class="metrics">
+        <div class="metric"><div class="v" id="mConn">—</div><div class="k">PeerConnection</div></div>
+        <div class="metric"><div class="v" id="mIce">—</div><div class="k">ICE</div></div>
+        <div class="metric"><div class="v" id="mDc">—</div><div class="k">DataChannel</div></div>
+        <div class="metric"><div class="v" id="mEvents">0</div><div class="k">Events</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Log</div>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const log = (msg, cls = '') => {
+  const el = $('log');
+  const line = document.createElement('div');
+  line.textContent = `${new Date().toLocaleTimeString()} ${msg}`;
+  if (cls) line.classList.add(cls);
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+};
+
+// ===== Audio device picker =====
+const DEVICE_LS_KEY = 'realtime-chat:audioInputDeviceId';
+let selectedDeviceId = localStorage.getItem(DEVICE_LS_KEY) || '';
+
+async function loadAudioDevices(promptForPermission = false) {
+  try {
+    if (promptForPermission) {
+      try {
+        const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+        tmp.getTracks().forEach(t => t.stop());
+      } catch (e) { log(`[mic] permission denied: ${e.message}`, 'err'); }
+    }
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter(d => d.kind === 'audioinput');
+    const sel = $('micDevice');
+    sel.innerHTML = '<option value="">Default</option>';
+    for (const d of inputs) {
+      const label = d.label || `Microphone ${d.deviceId.slice(0, 6)}`;
+      sel.add(new Option(label, d.deviceId));
+    }
+    if (selectedDeviceId && inputs.some(d => d.deviceId === selectedDeviceId)) {
+      sel.value = selectedDeviceId;
+    } else {
+      selectedDeviceId = '';
+    }
+    log(`[mic] enumerated ${inputs.length} input device(s)`);
+  } catch (e) { log(`[mic] enumerateDevices failed: ${e.message}`, 'err'); }
+}
+
+$('micDevice').addEventListener('change', () => {
+  selectedDeviceId = $('micDevice').value || '';
+  localStorage.setItem(DEVICE_LS_KEY, selectedDeviceId);
+});
+$('refreshDevicesBtn').addEventListener('click', () => loadAudioDevices(true));
+
+// ===== State =====
+let peerConnection = null;
+let dataChannel = null;
+let micStream = null;
+let remoteAudio = null;
+let meterCtx = null, meterSrc = null, meterAnalyser = null, meterTimer = null;
+let eventCount = 0;
+
+// ===== Room mode UI wiring =====
+$('vadThreshold').addEventListener('input', () => {
+  $('vadValue').textContent = Number($('vadThreshold').value).toFixed(2);
+});
+
+// ===== Server session =====
+async function createSession() {
+  const r = await fetch('/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      voice: $('voice').value,
+      instructions: $('instructions').value,
+      inputLanguage: $('lang').value,
+      roomMode: $('roomMode').checked,
+      vadThreshold: Number($('vadThreshold').value),
+      transcriptionModel: $('transcriptionModel').value,
+    }),
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || `Session HTTP ${r.status}`);
+  return data;
+}
+
+// ===== Mic capture =====
+async function captureMic() {
+  // In "room mode" we DISABLE all browser DSP — echoCancellation in particular
+  // actively subtracts speaker audio (e.g. YouTube playing on the same machine)
+  // from the mic stream, which is exactly what we *don't* want when trying to
+  // pick up multiple speakers or media playback.
+  const roomMode = $('roomMode').checked;
+  const baseAudio = roomMode
+    ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    : { echoCancellation: true,  noiseSuppression: true,  autoGainControl: true };
+
+  const constraints = {
+    audio: selectedDeviceId
+      ? { deviceId: { exact: selectedDeviceId }, ...baseAudio }
+      : baseAudio,
+    video: false,
+  };
+  log(`[mic] roomMode=${roomMode} → AEC/NS/AGC=${roomMode ? 'OFF' : 'ON'}`);
+  const stream = await navigator.mediaDevices.getUserMedia(constraints);
+  if (stream.getAudioTracks().length === 0) {
+    stream.getTracks().forEach(t => t.stop());
+    throw new Error('No microphone audio track available');
+  }
+  return stream;
+}
+
+function startInputMeter(stream) {
+  meterCtx = new AudioContext();
+  meterSrc = meterCtx.createMediaStreamSource(stream);
+  meterAnalyser = meterCtx.createAnalyser();
+  meterAnalyser.fftSize = 1024;
+  meterSrc.connect(meterAnalyser);
+  const buf = new Float32Array(meterAnalyser.fftSize);
+  meterTimer = setInterval(() => {
+    meterAnalyser.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (const s of buf) sum += s * s;
+    const rms = Math.sqrt(sum / buf.length);
+    $('meterFill').style.width = `${Math.min(100, rms * 600)}%`;
+  }, 80);
+}
+
+// ===== WebRTC connect =====
+async function connectRealtime(session, stream) {
+  peerConnection = new RTCPeerConnection();
+
+  remoteAudio = new Audio();
+  remoteAudio.autoplay = true;
+  remoteAudio.playsInline = true;
+
+  peerConnection.onconnectionstatechange = () => {
+    const s = peerConnection.connectionState;
+    $('mConn').textContent = s;
+    $('connStatus').textContent = s;
+    log(`[pc] connection: ${s}`);
+  };
+  peerConnection.oniceconnectionstatechange = () => {
+    $('mIce').textContent = peerConnection.iceConnectionState;
+  };
+  peerConnection.ontrack = ({ streams }) => {
+    log('[pc] remote track received', 'ok');
+    remoteAudio.srcObject = streams[0];
+    remoteAudio.play().catch((e) => log(`[audio] play failed: ${e.message}`, 'err'));
+  };
+
+  dataChannel = peerConnection.createDataChannel('oai-events');
+  dataChannel.onopen = () => {
+    $('mDc').textContent = 'open';
+    log('[dc] open', 'ok');
+    setStatus(true);
+    $('textInput').disabled = false;
+    $('sendBtn').disabled = false;
+  };
+  dataChannel.onclose = () => {
+    $('mDc').textContent = 'closed';
+    log('[dc] closed');
+  };
+  dataChannel.onmessage = handleRealtimeEvent;
+
+  for (const track of stream.getAudioTracks()) {
+    peerConnection.addTrack(track, stream);
+  }
+
+  const offer = await peerConnection.createOffer();
+  await peerConnection.setLocalDescription(offer);
+
+  // SDP exchange against the *regular* realtime calls endpoint (NOT /translations/calls).
+  const sdpRes = await fetch(`https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(session.model)}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${session.client_secret}`,
+      'Content-Type': 'application/sdp',
+    },
+    body: offer.sdp,
+  });
+  const answerSdp = await sdpRes.text();
+  if (!sdpRes.ok) throw new Error(`SDP exchange ${sdpRes.status}: ${answerSdp}`);
+  await peerConnection.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+  log(`[pc] connected (model=${session.model})`, 'ok');
+}
+
+// ===== Transcript rendering =====
+const messages = new Map(); // item_id → { role, el, text, role-final }
+let activeUserResponseId = null;
+
+function renderMessage(id, role, text) {
+  let entry = messages.get(id);
+  if (!entry) {
+    const el = document.createElement('div');
+    el.className = `msg ${role}`;
+    const who = document.createElement('div');
+    who.className = 'who';
+    who.textContent = role === 'user' ? 'You' : 'Assistant';
+    const body = document.createElement('div');
+    body.className = 'body';
+    el.appendChild(who); el.appendChild(body);
+    $('transcript').appendChild(el);
+    entry = { role, el, body, text: '' };
+    messages.set(id, entry);
+  }
+  entry.text = text;
+  entry.body.textContent = text;
+  $('transcript').scrollTop = $('transcript').scrollHeight;
+}
+
+function appendMessage(id, role, delta) {
+  let entry = messages.get(id);
+  if (!entry) {
+    renderMessage(id, role, '');
+    entry = messages.get(id);
+  }
+  entry.text += delta;
+  entry.body.textContent = entry.text;
+  $('transcript').scrollTop = $('transcript').scrollHeight;
+}
+
+// ===== Events from data channel =====
+function handleRealtimeEvent(msg) {
+  let evt;
+  try { evt = JSON.parse(msg.data); } catch { return; }
+  eventCount++;
+  $('mEvents').textContent = String(eventCount);
+
+  switch (evt.type) {
+    case 'session.created':
+    case 'session.updated':
+      log(`[evt] ${evt.type}`);
+      break;
+
+    // ---- User speech transcription (input audio buffer) ----
+    case 'conversation.item.input_audio_transcription.delta':
+      if (evt.item_id && typeof evt.delta === 'string') {
+        appendMessage(evt.item_id, 'user', evt.delta);
+      }
+      break;
+    case 'conversation.item.input_audio_transcription.completed':
+      if (evt.item_id && typeof evt.transcript === 'string') {
+        renderMessage(evt.item_id, 'user', evt.transcript);
+      }
+      break;
+
+    // ---- Assistant streamed text (audio transcript) ----
+    case 'response.audio_transcript.delta':
+    case 'response.output_audio_transcript.delta':
+      if (evt.item_id && typeof evt.delta === 'string') {
+        appendMessage(evt.item_id, 'assistant', evt.delta);
+      }
+      break;
+    case 'response.audio_transcript.done':
+    case 'response.output_audio_transcript.done':
+      if (evt.item_id && typeof evt.transcript === 'string') {
+        renderMessage(evt.item_id, 'assistant', evt.transcript);
+      }
+      break;
+
+    // ---- Plain text streaming (when model emits text-only output) ----
+    case 'response.text.delta':
+    case 'response.output_text.delta':
+      if (evt.item_id && typeof evt.delta === 'string') {
+        appendMessage(evt.item_id, 'assistant', evt.delta);
+      }
+      break;
+
+    case 'response.done':
+      log('[evt] response.done');
+      break;
+    case 'error':
+      log(`[evt] error: ${JSON.stringify(evt.error || evt)}`, 'err');
+      break;
+
+    default:
+      // log(`[evt] ${evt.type}`); // uncomment for full firehose
+      break;
+  }
+}
+
+// ===== Send text input =====
+function sendText() {
+  const text = $('textInput').value.trim();
+  if (!text || !dataChannel || dataChannel.readyState !== 'open') return;
+
+  dataChannel.send(JSON.stringify({
+    type: 'conversation.item.create',
+    item: {
+      type: 'message',
+      role: 'user',
+      content: [{ type: 'input_text', text }],
+    },
+  }));
+  dataChannel.send(JSON.stringify({ type: 'response.create' }));
+
+  // Locally render user message immediately (server won't echo input_text as transcript)
+  renderMessage(`local-${Date.now()}`, 'user', text);
+  $('textInput').value = '';
+}
+
+$('sendBtn').addEventListener('click', sendText);
+$('textInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); sendText(); }
+});
+
+// ===== Lifecycle =====
+function setStatus(live) {
+  $('statusDot').className = live ? 'status live' : 'status';
+}
+function setControls(running) {
+  $('startBtn').disabled = running;
+  $('stopBtn').disabled = !running;
+  $('voice').disabled = running;
+  $('lang').disabled = running;
+  $('instructions').disabled = running;
+  $('micDevice').disabled = running;
+  $('refreshDevicesBtn').disabled = running;
+  $('roomMode').disabled = running;
+  $('vadThreshold').disabled = running;
+  $('transcriptionModel').disabled = running;
+  if (!running) {
+    $('textInput').disabled = true;
+    $('sendBtn').disabled = true;
+  }
+}
+
+async function start() {
+  setControls(true);
+  $('transcript').innerHTML = '';
+  messages.clear();
+  eventCount = 0;
+  $('mEvents').textContent = '0';
+
+  try {
+    log(`[start] requesting microphone…`);
+    micStream = await captureMic();
+    startInputMeter(micStream);
+
+    log(`[start] minting client_secret…`);
+    const session = await createSession();
+    log(`[start] session ok, model=${session.model}`, 'ok');
+
+    log(`[start] connecting WebRTC…`);
+    await connectRealtime(session, micStream);
+  } catch (e) {
+    log(`[start] error: ${e.message}`, 'err');
+    await stop();
+  }
+}
+
+async function stop() {
+  setStatus(false);
+  if (meterTimer) { clearInterval(meterTimer); meterTimer = null; }
+  meterSrc?.disconnect(); meterAnalyser?.disconnect();
+  meterSrc = null; meterAnalyser = null;
+  if (meterCtx?.state !== 'closed') { try { await meterCtx?.close(); } catch {} }
+  meterCtx = null;
+
+  try { dataChannel?.close(); } catch {}
+  dataChannel = null;
+  try { peerConnection?.close(); } catch {}
+  peerConnection = null;
+
+  micStream?.getTracks().forEach(t => t.stop());
+  micStream = null;
+
+  if (remoteAudio) {
+    try { remoteAudio.pause(); remoteAudio.srcObject = null; } catch {}
+  }
+  remoteAudio = null;
+
+  $('meterFill').style.width = '0%';
+  $('mConn').textContent = '—';
+  $('mIce').textContent = '—';
+  $('mDc').textContent = '—';
+  $('connStatus').textContent = 'idle';
+  setControls(false);
+  log('[stop] cleaned up');
+}
+
+$('startBtn').addEventListener('click', start);
+$('stopBtn').addEventListener('click', stop);
+
+// ===== Init =====
+loadAudioDevices(false);
+log('Ready. Click "Start chat" to begin.');
+</script>
+</body>
+</html>

@@ -804,7 +804,7 @@
     <div id="mainContent" style="display:none">
       <div class="app-title" id="appTitle">Voice Translator</div>
       <!-- Bump APP_VERSION on every commit so cache busts are visible to user. -->
-      <div class="app-version" id="appVersion">build · 2026-05-08 · v9</div>
+      <div class="app-version" id="appVersion">build · 2026-05-08 · v10</div>
 
       <!-- ==================== VOICE TAB (legacy one-shot flow) ==================== -->
       <div class="tab-content" data-tab="voice">
@@ -3269,9 +3269,9 @@
       const C_LANG_LS   = 'chat.lang';
       const C_TX_LS     = 'chat.transcribeModel';
       const C_DEV_LS    = 'chat.mic';
-      // Bumped to .v4 to force-refresh anyone whose localStorage still holds
-      // the previous default — they'll get the new UA↔ES prompt.
-      const C_INSTR_LS  = 'chat.instructions.v4';
+      // Bumped to .v5 to force-refresh anyone whose localStorage still holds
+      // the previous default OR a self-edited UA↔EN — guaranteed UA↔ES default.
+      const C_INSTR_LS  = 'chat.instructions.v5';
       const C_ROOM_LS   = 'chat.roomMode';
       const C_VAD_LS    = 'chat.vadThreshold';
 
