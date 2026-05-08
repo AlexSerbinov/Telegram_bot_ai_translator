@@ -1,11 +1,25 @@
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
+  // Telegram-side identity (Mini App). Optional: iOS users won't have it.
   telegramId: {
     type: Number,
-    required: true,
+    required: false,
+    sparse: true,
     unique: true,
     index: true
+  },
+  // Apple Sign In identity (iOS app). Optional: Telegram users won't have it.
+  appleSub: {
+    type: String,
+    required: false,
+    sparse: true,
+    unique: true,
+    index: true
+  },
+  email: {
+    type: String,
+    required: false
   },
   username: {
     type: String,
@@ -237,7 +251,7 @@ userSchema.methods.clearVoiceState = function() {
 // Static method to find or create user
 userSchema.statics.findOrCreate = async function(telegramUser) {
   let user = await this.findOne({ telegramId: telegramUser.id });
-  
+
   if (!user) {
     user = new this({
       telegramId: telegramUser.id,
@@ -247,7 +261,28 @@ userSchema.statics.findOrCreate = async function(telegramUser) {
     });
     await user.save();
   }
-  
+
+  return user;
+};
+
+// Find or create a user from an Apple Sign In identity.
+// `appleSub` is the stable Apple user id; `email` and `name` are optional and
+// may be null on subsequent logins (Apple only sends them on first auth).
+userSchema.statics.findOrCreateByAppleSub = async function({ appleSub, email, name }) {
+  let user = await this.findOne({ appleSub });
+  if (!user) {
+    user = new this({
+      appleSub,
+      email: email || undefined,
+      firstName: name?.givenName || undefined,
+      lastName: name?.familyName || undefined,
+    });
+    await user.save();
+  } else if (email && !user.email) {
+    // Backfill email if Apple sent it for the first time.
+    user.email = email;
+    await user.save();
+  }
   return user;
 };
 

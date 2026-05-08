@@ -8,6 +8,7 @@
     "dev": "nodemon src/bot.js",
     "dev:ngrok": "./scripts/dev.sh",
     "live": "nodemon scripts/live-server.js",
+    "realtime:chat": "node scripts/realtime-chat-server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "env:push": "./scripts/sync-env.sh"
   },
@@ -30,6 +31,7 @@
     "express": "^5.2.1",
     "form-data": "^4.0.0",
     "fs-extra": "^11.2.0",
+    "jose": "^6.2.3",
     "mongoose": "^8.15.0",
     "openai": "^4.24.0",
     "telegraf": "^4.15.6",

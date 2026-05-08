@@ -132,3 +132,5 @@ public
 # Temporary folders
 tmp/
 temp/ 
+# iOS app — separate private repo: AlexSerbinov/teycan-translate-ios
+ios/

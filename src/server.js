@@ -9,6 +9,9 @@ const geminiService = require('./services/geminiService');
 const groqService = require('./services/groqService');
 const databaseService = require('./services/databaseService');
 const { attachLiveWs } = require('./liveTranslator');
+const { verifyAppleIdentityToken, issueAppJWT } = require('./services/appleAuthService');
+const { requireAuth } = require('./middleware/auth');
+const User = require('./models/User');
 
 // Extended language map for the live translator demo — broader than config.languages
 // (which is only the 6 languages exposed in the Telegram bot UI).
@@ -418,6 +421,128 @@ Translate ONLY the NEW source segment provided by the user, as a natural continu
       res.json({ primaryLanguage, secondaryLanguage });
     } catch (error) {
       logger.error('Error updating user languages:', error);
+      res.status(500).json({ error: 'Failed to update languages' });
+    }
+  });
+
+  // POST /api/voice/transcribe
+  // Body: raw audio bytes (Content-Type: audio/m4a, audio/wav, audio/mpeg, etc.)
+  // Optional query: ?language=uk|en|es|... (default auto-detect)
+  // Returns: { text, detectedLanguage, confidence }
+  //
+  // Used by iOS Voice tab v1 (one-shot record → batch transcription).
+  // Limit 25 MB matches ElevenLabs Scribe v2 cap.
+  app.post('/api/voice/transcribe',
+    express.raw({ type: ['audio/*', 'application/octet-stream'], limit: '25mb' }),
+    async (req, res) => {
+      const fs = require('fs-extra');
+      const path = require('path');
+      const os = require('os');
+      try {
+        if (!req.body || !req.body.length) {
+          return res.status(400).json({ error: 'Empty audio body' });
+        }
+        const ext = (req.headers['content-type'] || 'audio/m4a').split('/')[1].split(';')[0] || 'm4a';
+        const tmpFile = path.join(os.tmpdir(), `voice-${Date.now()}.${ext}`);
+        await fs.writeFile(tmpFile, req.body);
+        try {
+          const lang = (req.query.language || 'auto').toString();
+          const elevenLabsService = require('./services/elevenLabsService');
+          const result = await elevenLabsService.speechToText(tmpFile, lang);
+          res.json(result);
+        } finally {
+          await fs.remove(tmpFile).catch(() => {});
+        }
+      } catch (error) {
+        logger.error('voice transcribe failed:', error);
+        res.status(500).json({ error: 'Transcription failed: ' + error.message });
+      }
+    }
+  );
+
+  // ── Apple Sign In ──────────────────────────────────────────────────────
+  // POST /api/auth/apple
+  // Body: { identityToken: string, authorizationCode?: string,
+  //         fullName?: { givenName?, familyName? } }
+  // Returns: { token: <app-jwt>, user: { id, email?, primaryLanguage, secondaryLanguage } }
+  //
+  // The iOS app gets `identityToken` from ASAuthorizationAppleIDCredential
+  // and sends it here. We verify against Apple's JWKS, find/create the User
+  // record, and mint a 30-day app JWT for subsequent requests.
+  app.post('/api/auth/apple', async (req, res) => {
+    try {
+      const { identityToken, fullName } = req.body || {};
+      if (!identityToken) {
+        return res.status(400).json({ error: 'Missing identityToken' });
+      }
+
+      const audience = process.env.APPLE_CLIENT_ID || 'solutions.techchain.teycan.translate';
+      const claims = await verifyAppleIdentityToken(identityToken, audience);
+
+      const user = await User.findOrCreateByAppleSub({
+        appleSub: claims.sub,
+        email: claims.email,
+        name: fullName,
+      });
+
+      const secret = process.env.JWT_SECRET;
+      if (!secret) {
+        logger.error('JWT_SECRET not configured');
+        return res.status(500).json({ error: 'Server not configured' });
+      }
+      const token = await issueAppJWT(
+        { userId: String(user._id), appleSub: claims.sub },
+        secret
+      );
+
+      res.json({
+        token,
+        user: {
+          id: String(user._id),
+          email: user.email || null,
+          primaryLanguage: user.languages?.primaryLanguage || 'uk',
+          secondaryLanguage: user.languages?.secondaryLanguage || 'es',
+        },
+      });
+    } catch (error) {
+      logger.warn('Apple auth failed: ' + error.message);
+      res.status(401).json({ error: 'Apple auth failed: ' + error.message });
+    }
+  });
+
+  // GET /api/user/me  (JWT-protected — used by iOS)
+  // Returns the authenticated user's preferences.
+  app.get('/api/user/me', requireAuth(), async (req, res) => {
+    const u = req.user;
+    res.json({
+      id: String(u._id),
+      email: u.email || null,
+      primaryLanguage: u.languages?.primaryLanguage || 'uk',
+      secondaryLanguage: u.languages?.secondaryLanguage || 'es',
+      sttProvider: process.env.STT_PROVIDER || 'soniox',
+    });
+  });
+
+  // PUT /api/user/me/languages  (JWT-protected — used by iOS)
+  app.put('/api/user/me/languages', requireAuth(), async (req, res) => {
+    try {
+      const { primaryLanguage, secondaryLanguage } = req.body || {};
+      if (!primaryLanguage || !secondaryLanguage) {
+        return res.status(400).json({ error: 'Missing primaryLanguage or secondaryLanguage' });
+      }
+      if (!config.languages[primaryLanguage] || !config.languages[secondaryLanguage]) {
+        return res.status(400).json({ error: 'Unsupported language code' });
+      }
+      if (primaryLanguage === secondaryLanguage) {
+        return res.status(400).json({ error: 'Languages must be different' });
+      }
+      req.user.languages = req.user.languages || {};
+      req.user.languages.primaryLanguage = primaryLanguage;
+      req.user.languages.secondaryLanguage = secondaryLanguage;
+      await req.user.save();
+      res.json({ primaryLanguage, secondaryLanguage });
+    } catch (error) {
+      logger.error('Error updating /me languages:', error);
       res.status(500).json({ error: 'Failed to update languages' });
     }
   });

@@ -249,3 +249,43 @@ docker restart mongo-translator
 - Check GitHub Actions tab in the repo
 - Verify secrets: `gh secret list --repo AlexSerbinov/Telegram_bot_ai_translator`
 - SSH manually: `ssh -i ~/.ssh/id_rsa root@89.167.19.222 "cd /opt/ai-translator && git log --oneline -1"`
+
+---
+
+## Design System
+
+**ALWAYS read `DESIGN.md` (in repo root) before making any visual or UI decision.**
+
+All font choices, colors, spacing, motion, tab naming, and layout structures are defined there. Do not deviate without explicit user approval. In QA mode, flag any code that does not match `DESIGN.md`.
+
+Key locks (full spec in `DESIGN.md`):
+- **Aesthetic:** Editorial-Strict (sharp, restrained, sans-only, no warm decoration)
+- **Accent color:** Forest Green `#1F4A3A` (light) / `#3D8A6A` (dark). Replaced earlier amber.
+- **Typography:** SF Pro Display Bold tight (-0.03em) for headers, SF Pro Text for body, JetBrains Mono for data/eyebrow.
+- **Tab names:** Phrase (Voice) / Companion (Realtime) / Bridge (Chat). Use these names in code, copy, App Store, marketing.
+- **Mode-specific layouts:** Each tab has unique structure. Phrase = lang pair + output card + square mic. Companion = AirPods status + transcript stream + square mic + headphones gate. Bridge = lang pair + symmetric two-side stage + model node + round mic.
+- **Brand:** wordmark only on icon. Dog Teycan lives in onboarding screen 2, About, paw-print easter eggs.
+
+When porting to SwiftUI, write tokens to:
+- `ios/TeycanTranslate/Sources/DesignSystem/Colors.swift` — color tokens with light/dark variants
+- `ios/TeycanTranslate/Sources/DesignSystem/Typography.swift` — font roles + scale
+- `ios/TeycanTranslate/Sources/DesignSystem/Spacing.swift` — spacing scale + radius scale (create new file)
+- `ios/TeycanTranslate/Sources/DesignSystem/Motion.swift` — animation specs (create new file)
+
+## Skill routing
+
+When the user's request matches an available skill, ALWAYS invoke it using the Skill tool as your FIRST action. Do NOT answer directly, do NOT use other tools first. The skill has specialized workflows that produce better results than ad-hoc answers.
+
+Key routing rules:
+- Product ideas, "is this worth building", brainstorming → invoke `office-hours`
+- Bugs, errors, "why is this broken", 500 errors → invoke `investigate`
+- Ship, deploy, push, create PR → invoke `ship`
+- QA, test the site, find bugs → invoke `qa`
+- Code review, check my diff → invoke `review`
+- Update docs after shipping → invoke `document-release`
+- Weekly retro → invoke `retro`
+- Design system, brand, visual decisions → invoke `design-consultation`
+- Visual audit, design polish → invoke `design-review`
+- Architecture review → invoke `plan-eng-review`
+- Save progress, checkpoint, resume → invoke `checkpoint`
+- Code quality, health check → invoke `health`
