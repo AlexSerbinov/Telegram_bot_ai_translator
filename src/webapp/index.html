@@ -2254,6 +2254,15 @@
       const SPEED_LS = 'live.speed';
       const AUTO_LS = 'live.auto';
       const TTS_LS = 'live.tts';
+      const ENGINE_LS = 'live.engine';
+
+      // Target languages supported by OpenAI Realtime Translation API.
+      // Source is auto-detected by the model, so source picker is informational.
+      const OPENAI_TARGET_LANGS = new Set(['es', 'pt', 'fr', 'ja', 'ru', 'zh', 'de', 'ko', 'hi', 'id', 'vi', 'it', 'en']);
+
+      // Cost-saving auto-shutoff for OpenAI engine (gpt-realtime-translate is metered).
+      const OPENAI_WARN_AFTER_MS = 2 * 60 * 1000;  // 2 min → beep + Continue button
+      const OPENAI_STOP_AFTER_MS = 3 * 60 * 1000;  // 3 min → auto-stop unless Continue pressed
 
       let state = {
         running: false, ws: null, audioCtx: null, mediaStream: null, sourceNode: null, workletNode: null,
@@ -2263,6 +2272,10 @@
         voiceSpeed: parseFloat(localStorage.getItem(SPEED_LS) || '1.0'),
         autoSpeed: localStorage.getItem(AUTO_LS) === '1',
         ttsProvider: localStorage.getItem(TTS_LS) || 'soniox',
+        engine: localStorage.getItem(ENGINE_LS) || 'backend', // 'backend' | 'openai'
+        // OpenAI engine runtime
+        oaPc: null, oaDc: null, oaStream: null, oaAudioEl: null,
+        oaWarnTimer: null, oaStopTimer: null, oaSessionStartedAt: 0,
         chunkCount: 0,
         srcAccumulated: '',
         srcInterim: '',
@@ -2303,12 +2316,25 @@
               <button id="liveSwap" class="swap-btn" type="button" title="Swap">⇄</button>
             </div>
 
-            <div class="live-langs">
+            <div class="live-langs" id="liveEngineRow">
+              <label style="font-size:12px;color:var(--text-secondary)">Engine:</label>
+              <select id="liveEngine">
+                <option value="backend">🛠 Soniox + Groq + TTS</option>
+                <option value="openai">🤖 OpenAI Realtime ($)</option>
+              </select>
+            </div>
+
+            <div class="live-langs" id="liveTtsRow">
               <label style="font-size:12px;color:var(--text-secondary)">Voice:</label>
               <select id="liveTtsProvider">
                 <option value="soniox">🎙 Soniox (multilingual)</option>
                 <option value="eleven">🎤 ElevenLabs Flash</option>
               </select>
+            </div>
+
+            <div class="live-controls" id="liveContinueRow" hidden style="flex-direction:column;gap:6px;align-items:center">
+              <div style="font-size:12px;color:var(--recording);font-weight:600">⏰ 1 хв до автозупинки (економія коштів)</div>
+              <button class="swap-btn" id="liveContinueBtn" type="button" style="padding:8px 18px;font-weight:600">Продовжити ще +3 хв</button>
             </div>
 
             <div class="live-speed">
@@ -2352,7 +2378,32 @@
         $('liveSrc').value = state.sourceLang;
         $('liveTgt').value = state.targetLang;
         $('liveTtsProvider').value = state.ttsProvider;
+        $('liveEngine').value = state.engine;
+        applyEngineUi();
         refreshLabels();
+      }
+
+      // When engine=openai: hide TTS row, disable target langs not in OpenAI's list,
+      // auto-fallback if current target is unsupported.
+      function applyEngineUi() {
+        const isOA = state.engine === 'openai';
+        const ttsRow = document.getElementById('liveTtsRow');
+        if (ttsRow) ttsRow.hidden = isOA;
+
+        const tgtSel = document.getElementById('liveTgt');
+        if (tgtSel) {
+          for (const opt of tgtSel.options) {
+            opt.disabled = isOA && !OPENAI_TARGET_LANGS.has(opt.value);
+          }
+          // If current target became unsupported, fall back to first allowed (prefer 'ru' since user said no Ukrainian).
+          if (isOA && !OPENAI_TARGET_LANGS.has(state.targetLang)) {
+            const fallback = OPENAI_TARGET_LANGS.has('ru') ? 'ru' : tgtSel.options[0].value;
+            state.targetLang = fallback;
+            tgtSel.value = fallback;
+            localStorage.setItem(TGT_LS, fallback);
+            log(`[engine] target fallback → ${fallback} (OpenAI doesn't support previous target)`, 'err');
+          }
+        }
       }
 
       function refreshLabels() {
@@ -2375,6 +2426,18 @@
           state.ttsProvider = $('liveTtsProvider').value;
           localStorage.setItem(TTS_LS, state.ttsProvider);
           log(`[tts] provider → ${state.ttsProvider} (applies on next Start)`);
+        });
+        $('liveEngine').addEventListener('change', () => {
+          if (state.running) { log('[engine] stop the session before switching engine', 'err'); $('liveEngine').value = state.engine; return; }
+          state.engine = $('liveEngine').value;
+          localStorage.setItem(ENGINE_LS, state.engine);
+          applyEngineUi();
+          log(`[engine] → ${state.engine}`);
+        });
+        $('liveContinueBtn').addEventListener('click', () => {
+          openaiResetTimers();
+          $('liveContinueRow').hidden = true;
+          log('[openai] timer extended +3 min', 'ok');
         });
         $('liveSwap').addEventListener('click', () => {
           const a = state.sourceLang, b = state.targetLang;
@@ -2414,6 +2477,12 @@
         state.chunkCount = 0; state.srcAccumulated = ''; state.srcInterim = ''; state.tgtCommitted = '';
         $('liveSrcText').textContent = '—'; $('liveTgtText').textContent = '—';
         $('lmTrans').textContent = '—'; $('lmTts').textContent = '—';
+
+        // Branch on engine — OpenAI uses WebRTC, doesn't need worklet pipeline at all.
+        if (state.engine === 'openai') {
+          await startOpenAI();
+          return;
+        }
 
         await ensureOutputCtx();
         await openMic();
@@ -2463,10 +2532,159 @@
           try { state.ws.close(); } catch {}
           state.ws = null;
         }
+        // OpenAI engine cleanup (no-op if backend engine was running)
+        stopOpenAI();
         $('liveStartBtn')?.classList.remove('live');
         if ($('liveSrcStatus')) $('liveSrcStatus').textContent = 'stopped';
       }
       function stopIfRunning() { if (state.running) stop(); }
+
+      // ===== OpenAI Realtime engine (WebRTC, no backend audio proxy) =====
+      async function startOpenAI() {
+        try {
+          if (!OPENAI_TARGET_LANGS.has(state.targetLang)) {
+            log(`[openai] target "${state.targetLang}" not supported. Pick: ${[...OPENAI_TARGET_LANGS].join(', ')}`, 'err');
+            return;
+          }
+          state.running = true;
+          $('liveStartBtn').classList.add('live');
+          $('liveSrcStatus').textContent = 'connecting…';
+          log('[openai] requesting mic…');
+
+          state.oaStream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+            video: false,
+          });
+
+          log(`[openai] creating session (target=${state.targetLang})…`);
+          const sessRes = await fetch('/api/realtime/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetLanguage: state.targetLang }),
+          });
+          const sess = await sessRes.json();
+          if (!sessRes.ok) throw new Error(sess.error || `session HTTP ${sessRes.status}`);
+          log(`[openai] session ok, model=${sess.model}`, 'ok');
+
+          state.oaPc = new RTCPeerConnection();
+          state.oaAudioEl = new Audio();
+          state.oaAudioEl.autoplay = true;
+          state.oaAudioEl.playsInline = true;
+          state.oaPc.ontrack = ({ streams }) => {
+            log('[openai] remote track received', 'ok');
+            state.oaAudioEl.srcObject = streams[0];
+            state.oaAudioEl.play().catch(e => log(`[openai] play err: ${e.message}`, 'err'));
+          };
+          state.oaPc.onconnectionstatechange = () => log(`[openai] pc: ${state.oaPc?.connectionState}`);
+
+          state.oaDc = state.oaPc.createDataChannel('oai-events');
+          state.oaDc.onopen = () => {
+            log('[openai] data channel open', 'ok');
+            $('liveSrcStatus').textContent = 'live';
+            state.oaSessionStartedAt = Date.now();
+            openaiArmTimers();
+          };
+          state.oaDc.onmessage = (m) => {
+            let evt; try { evt = JSON.parse(m.data); } catch { return; }
+            switch (evt.type) {
+              case 'session.input_transcript.delta':
+                if (typeof evt.delta === 'string') {
+                  state.srcInterim = (state.srcInterim || '') + evt.delta;
+                  renderSource();
+                }
+                break;
+              case 'session.input_transcript.completed':
+                state.srcAccumulated += (state.srcInterim || '') + ' ';
+                state.srcInterim = '';
+                renderSource();
+                break;
+              case 'session.output_transcript.delta':
+                if (typeof evt.delta === 'string') {
+                  state.tgtCommitted = (state.tgtCommitted || '') + evt.delta;
+                  renderTarget();
+                }
+                break;
+              case 'session.output_transcript.completed':
+                state.tgtCommitted = (state.tgtCommitted || '') + ' ';
+                renderTarget();
+                break;
+              case 'error':
+                log(`[openai-evt] error: ${JSON.stringify(evt.error || evt)}`, 'err');
+                break;
+            }
+          };
+
+          for (const track of state.oaStream.getAudioTracks()) {
+            state.oaPc.addTrack(track, state.oaStream);
+          }
+          const offer = await state.oaPc.createOffer();
+          await state.oaPc.setLocalDescription(offer);
+          const sdpRes = await fetch('https://api.openai.com/v1/realtime/translations/calls', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${sess.client_secret}`,
+              'Content-Type': 'application/sdp',
+            },
+            body: offer.sdp,
+          });
+          const answerSdp = await sdpRes.text();
+          if (!sdpRes.ok) throw new Error(`SDP ${sdpRes.status}: ${answerSdp}`);
+          await state.oaPc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+          log(`[openai] connected for target=${state.targetLang}`, 'ok');
+        } catch (e) {
+          log(`[openai] start error: ${e.message}`, 'err');
+          stop();
+        }
+      }
+
+      function stopOpenAI() {
+        openaiClearTimers();
+        const row = document.getElementById('liveContinueRow');
+        if (row) row.hidden = true;
+        try { state.oaDc?.close(); } catch {}
+        try { state.oaPc?.close(); } catch {}
+        try { state.oaStream?.getTracks().forEach(t => t.stop()); } catch {}
+        if (state.oaAudioEl) { try { state.oaAudioEl.pause(); state.oaAudioEl.srcObject = null; } catch {} }
+        state.oaDc = state.oaPc = state.oaStream = state.oaAudioEl = null;
+      }
+
+      // ----- Cost-saving auto-shutoff timers (OpenAI engine only) -----
+      function openaiArmTimers() {
+        openaiClearTimers();
+        state.oaWarnTimer = setTimeout(() => {
+          if (!state.running) return;
+          playBeep(0.5);
+          const row = document.getElementById('liveContinueRow');
+          if (row) row.hidden = false;
+          log('[openai] ⏰ 2 min reached — auto-stop in 1 min unless Continue pressed', 'err');
+        }, OPENAI_WARN_AFTER_MS);
+        state.oaStopTimer = setTimeout(() => {
+          if (!state.running) return;
+          log('[openai] auto-stop after 3 min (cost guard)', 'err');
+          stop();
+        }, OPENAI_STOP_AFTER_MS);
+      }
+      function openaiClearTimers() {
+        if (state.oaWarnTimer) { clearTimeout(state.oaWarnTimer); state.oaWarnTimer = null; }
+        if (state.oaStopTimer) { clearTimeout(state.oaStopTimer); state.oaStopTimer = null; }
+      }
+      function openaiResetTimers() { openaiArmTimers(); }
+
+      function playBeep(durationSec) {
+        try {
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine'; osc.frequency.value = 880;
+          gain.gain.setValueAtTime(0.001, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + durationSec);
+          osc.connect(gain).connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + durationSec + 0.05);
+          osc.onended = () => { try { ctx.close(); } catch {} };
+        } catch (e) { log(`[beep] failed: ${e.message}`, 'err'); }
+      }
 
       // -----------------------------------------------------------------
       function onWsMessage(ev) {

@@ -205,6 +205,62 @@ Translate ONLY the NEW source segment provided by the user, as a natural continu
     }
   });
 
+  // OpenAI Realtime Translation — issue ephemeral client_secret for browser WebRTC.
+  // Real audio flows directly browser ↔ OpenAI; this server only mints the secret
+  // so OPENAI_API_KEY never reaches the browser. Mirrors openai-cookbook
+  // /examples/voice_solutions/realtime_translation_guide/browser-translation-demo.
+  app.post('/api/realtime/session', async (req, res) => {
+    try {
+      const { targetLanguage } = req.body || {};
+      if (!targetLanguage || typeof targetLanguage !== 'string') {
+        return res.status(400).json({ error: 'Missing targetLanguage' });
+      }
+      if (!config.openaiRealtime.apiKey) {
+        return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+      }
+
+      const r = await fetch(config.openaiRealtime.clientSecretUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.openaiRealtime.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          session: {
+            model: config.openaiRealtime.model,
+            audio: {
+              input: {
+                transcription: { model: config.openaiRealtime.transcriptionModel },
+                noise_reduction: null,
+              },
+              output: { language: targetLanguage },
+            },
+          },
+        }),
+      });
+
+      if (!r.ok) {
+        const errText = await r.text();
+        logger.error(`[Realtime] client_secret API ${r.status}: ${errText}`);
+        return res.status(r.status).json({ error: errText });
+      }
+      const data = await r.json();
+      if (!data || typeof data.value !== 'string') {
+        return res.status(502).json({ error: 'OpenAI did not return a client_secret value' });
+      }
+      logger.info(`[Realtime] session created (lang=${targetLanguage}, model=${config.openaiRealtime.model})`);
+      res.json({
+        client_secret: data.value,
+        expires_at: data.expires_at ?? null,
+        model: config.openaiRealtime.model,
+        targetLanguage,
+      });
+    } catch (e) {
+      logger.error('[Realtime] session error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Text-to-Speech via ElevenLabs
   app.post('/api/tts', async (req, res) => {
     try {
@@ -471,6 +527,7 @@ function startServer() {
     logger.info(`📱 Mini App: ${config.server.webappUrl}/webapp/index.html`);
     logger.info(`⚡ Live translator: ${config.server.webappUrl}/webapp/live.html`);
     logger.info(`🌍 Palabra demo:   ${config.server.webappUrl}/webapp/palabra.html`);
+    logger.info(`🤖 OpenAI Realtime: ${config.server.webappUrl}/webapp/realtime.html`);
     logger.info(`🔌 TTS WS proxy: /ws/tts`);
     logger.info(`🚀 Live engine WS: /ws/live`);
   });

@@ -13,6 +13,11 @@ Telegram User
             → Express server (/webapp/index.html)
             → API: /api/token, /api/translate, /api/tts
             → Real-time STT: Soniox or ElevenLabs WebSocket
+
+Standalone demo pages (do not affect main flow):
+    /webapp/live.html      — Soniox → Groq → ElevenLabs streaming pipeline
+    /webapp/palabra.html   — Palabra.ai speech-to-speech
+    /webapp/realtime.html  — OpenAI gpt-realtime-translate (WebRTC, mic → translated audio + captions)
 ```
 
 **Stack:** Node.js 18+, Express 5, Telegraf, MongoDB 7, Mongoose
@@ -22,6 +27,7 @@ Telegram User
 - **Groq** — alternative translation provider (OpenAI-compatible, LPU inference)
 - **ElevenLabs** — speech-to-text (Scribe V2) + text-to-speech
 - **Soniox** — real-time STT in Mini App (via WebSocket)
+- **OpenAI Realtime Translation** — `gpt-realtime-translate` model on `/webapp/realtime.html`. Browser ↔ OpenAI WebRTC; server only mints a short-lived `client_secret` via `POST /api/realtime/session`. Audio never passes through our server. Supported target languages: `es, pt, fr, ja, ru, zh, de, ko, hi, id, vi, it, en` (no Ukrainian output yet).
 
 ---
 
@@ -200,7 +206,9 @@ src/
 | Variable | Required | Description |
 |---|---|---|
 | `TELEGRAM_BOT_TOKEN` | Yes | Telegram bot token (DEV or PROD) |
-| `OPENAI_API_KEY` | Yes | OpenAI key (required by validator) |
+| `OPENAI_API_KEY` | Yes | OpenAI key (required by validator; also powers `/webapp/realtime.html`) |
+| `OPENAI_REALTIME_MODEL` | No | Default `gpt-realtime-translate` |
+| `OPENAI_REALTIME_TRANSCRIPTION_MODEL` | No | Default `gpt-realtime-whisper` |
 | `ELEVEN_LABS_API_KEY` | No | ElevenLabs STT/TTS |
 | `GOOGLE_GEMINI_API_KEY` | No | Gemini translation |
 | `GROQ_API_KEY` | No | Groq LPU translation (when `TRANSLATION_PROVIDER=groq`) |

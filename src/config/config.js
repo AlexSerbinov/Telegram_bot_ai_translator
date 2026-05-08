@@ -15,6 +15,14 @@ const config = {
     }
   },
 
+  // OpenAI Realtime Translation (browser WebRTC, used by /webapp/realtime.html)
+  openaiRealtime: {
+    apiKey: process.env.OPENAI_API_KEY,
+    model: process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime-translate',
+    transcriptionModel: process.env.OPENAI_REALTIME_TRANSCRIPTION_MODEL || 'gpt-realtime-whisper',
+    clientSecretUrl: 'https://api.openai.com/v1/realtime/translations/client_secrets',
+  },
+
   // ElevenLabs Configuration
   elevenLabs: {
     apiKey: process.env.ELEVEN_LABS_API_KEY,

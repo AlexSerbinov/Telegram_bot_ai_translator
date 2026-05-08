@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OpenAI Realtime Translator</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #151821;
+    --accent: #10a37f;
+    --accent2: #4ade80;
+    --muted: #6b7280;
+    --text: #e5e7eb;
+    --danger: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px 40px; min-height: 100vh;
+  }
+  header { text-align: center; margin-bottom: 16px; }
+  h1 { margin: 0; font-size: 22px; font-weight: 700; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .pipeline {
+    color: var(--muted); font-size: 11px; letter-spacing: 0.5px;
+    margin-top: 6px; font-family: ui-monospace, monospace;
+  }
+  .container { width: 100%; max-width: 720px; display: flex; flex-direction: column; gap: 14px; }
+  .langs {
+    display: flex; gap: 10px; align-items: center; justify-content: center;
+    margin-bottom: 6px; flex-wrap: wrap;
+  }
+  .langs select {
+    background: var(--panel); color: var(--text);
+    border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+    padding: 8px 10px; font-size: 14px; font-family: inherit; cursor: pointer;
+  }
+  .langs select:disabled { opacity: 0.5; cursor: not-allowed; }
+  .langs .arrow { color: var(--muted); font-weight: 700; }
+  .langs .src-hint { color: var(--muted); font-size: 11px; }
+  .device-row {
+    display: flex; gap: 8px; align-items: center; justify-content: center;
+    flex-wrap: wrap; margin-bottom: 6px;
+  }
+  .device-row label { font-size: 12px; color: var(--muted); }
+  .device-row select {
+    background: var(--panel); color: var(--text);
+    border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+    padding: 6px 10px; font-size: 13px; max-width: 360px;
+  }
+  .device-row select:disabled { opacity: 0.5; cursor: not-allowed; }
+  .device-row .refresh-btn {
+    background: transparent; color: var(--muted); border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+  }
+  .mix-row {
+    display: flex; gap: 10px; align-items: center; justify-content: center;
+    margin-bottom: 6px; flex-wrap: wrap;
+  }
+  .mix-row label { font-size: 12px; color: var(--muted); }
+  .mix-row input[type=range] { width: 200px; accent-color: var(--accent); }
+  .mix-row .mix-value {
+    font-family: ui-monospace, monospace; font-size: 13px; font-weight: 700;
+    color: var(--accent); min-width: 90px; text-align: center;
+  }
+  .card {
+    background: var(--panel); border-radius: 14px; padding: 18px 16px;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--muted); margin-bottom: 8px; display: flex; justify-content: space-between;
+  }
+  .text-area {
+    min-height: 80px; font-size: 17px; line-height: 1.4; white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .controls { display: flex; gap: 10px; justify-content: center; margin: 6px 0; }
+  button {
+    background: var(--accent); color: #fff; font-weight: 700;
+    border: none; border-radius: 999px; padding: 14px 26px;
+    font-size: 15px; cursor: pointer; transition: 0.15s;
+  }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.stop { background: var(--danger); color: #fff; }
+  button:not(:disabled):hover { transform: translateY(-1px); }
+  .metrics {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px;
+    font-family: ui-monospace, monospace; font-size: 13px;
+  }
+  .metric {
+    background: rgba(255,255,255,0.03); border-radius: 8px; padding: 10px;
+    text-align: center;
+  }
+  .metric .v { color: var(--accent); font-size: 18px; font-weight: 700; }
+  .metric .k { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; margin-top: 4px; }
+  .log {
+    font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted);
+    max-height: 160px; overflow-y: auto; line-height: 1.5;
+  }
+  .log .err { color: var(--danger); }
+  .log .ok { color: var(--accent2); }
+  .status {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted); margin-right: 6px; vertical-align: middle;
+  }
+  .status.live { background: var(--accent2); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .meter { width: 100%; max-width: 360px; height: 6px; background: rgba(255,255,255,0.06);
+           border-radius: 999px; overflow: hidden; }
+  .meter-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.08s linear; }
+</style>
+</head>
+<body>
+  <header>
+    <h1 id="title">🇪🇸 → 🇺🇦 OpenAI Realtime Translator</h1>
+    <div class="subtitle">Powered by OpenAI <code>gpt-realtime-translate</code> over WebRTC</div>
+    <div class="pipeline">MIC → WebRTC → OpenAI Realtime → AUDIO + CAPTIONS</div>
+  </header>
+
+  <div class="container">
+    <div class="langs">
+      <select id="srcLang" title="Source language is auto-detected — this is just a UI label"></select>
+      <span class="arrow">→</span>
+      <select id="tgtLang"></select>
+      <button id="swapBtn" type="button" style="background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:6px 14px;font-size:13px;font-weight:600;" title="Swap">⇄</button>
+    </div>
+    <div class="langs"><span class="src-hint">Source language is auto-detected by the model. Target picker is what you'll hear.</span></div>
+
+    <div class="device-row">
+      <label for="micDevice">🎙 Microphone:</label>
+      <select id="micDevice"><option value="">Default</option></select>
+      <button id="refreshDevicesBtn" class="refresh-btn" type="button" title="Refresh device list">↻</button>
+    </div>
+
+    <div class="mix-row">
+      <label for="audioMix">🔊 Volume:</label>
+      <input id="audioMix" type="range" min="0" max="100" step="1" value="100" />
+      <span class="mix-value" id="mixValue">100%</span>
+    </div>
+
+    <div class="card">
+      <div class="label">
+        <span><span class="status" id="statusDot"></span><span id="srcLabel">Spanish</span> (heard)</span>
+        <span id="srcStatus">idle</span>
+      </div>
+      <div class="text-area" id="srcText">—</div>
+      <div class="meter" style="margin-top:10px;"><div class="meter-fill" id="meterFill"></div></div>
+    </div>
+
+    <div class="controls">
+      <button id="startBtn">🎤 Start translating</button>
+      <button id="stopBtn" class="stop" disabled>■ Stop</button>
+    </div>
+
+    <div class="card">
+      <div class="label">
+        <span><span id="tgtLabel">Ukrainian</span> (translated speech + captions)</span>
+        <span id="tgtStatus">—</span>
+      </div>
+      <div class="text-area" id="tgtText">—</div>
+    </div>
+
+    <div class="card">
+      <div class="label">Diagnostics</div>
+      <div class="metrics">
+        <div class="metric"><div class="v" id="mConn">—</div><div class="k">PeerConnection</div></div>
+        <div class="metric"><div class="v" id="mIce">—</div><div class="k">ICE</div></div>
+        <div class="metric"><div class="v" id="mDc">—</div><div class="k">DataChannel</div></div>
+        <div class="metric"><div class="v" id="mEvents">0</div><div class="k">Events</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Log</div>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const log = (msg, cls = '') => {
+  const el = $('log');
+  const line = document.createElement('div');
+  line.textContent = `${new Date().toLocaleTimeString()} ${msg}`;
+  if (cls) line.classList.add(cls);
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+};
+
+// ===== Languages =====
+// OpenAI Realtime Translation supports these output (target) languages:
+// es, pt, fr, ja, ru, zh, de, ko, hi, id, vi, it, en
+const TARGET_LANGS = [
+  { code: 'uk', name: 'Ukrainian',  flag: '🇺🇦', supported: false }, // Not in OpenAI list — kept as label-only fallback
+  { code: 'es', name: 'Spanish',    flag: '🇪🇸', supported: true },
+  { code: 'en', name: 'English',    flag: '🇺🇸', supported: true },
+  { code: 'pt', name: 'Portuguese', flag: '🇵🇹', supported: true },
+  { code: 'fr', name: 'French',     flag: '🇫🇷', supported: true },
+  { code: 'de', name: 'German',     flag: '🇩🇪', supported: true },
+  { code: 'it', name: 'Italian',    flag: '🇮🇹', supported: true },
+  { code: 'ru', name: 'Russian',    flag: '🇷🇺', supported: true },
+  { code: 'ja', name: 'Japanese',   flag: '🇯🇵', supported: true },
+  { code: 'ko', name: 'Korean',     flag: '🇰🇷', supported: true },
+  { code: 'zh', name: 'Chinese',    flag: '🇨🇳', supported: true },
+  { code: 'hi', name: 'Hindi',      flag: '🇮🇳', supported: true },
+  { code: 'id', name: 'Indonesian', flag: '🇮🇩', supported: true },
+  { code: 'vi', name: 'Vietnamese', flag: '🇻🇳', supported: true },
+];
+
+// Source picker is informational only (model auto-detects). Same list + Ukrainian.
+const SOURCE_LANGS = [
+  { code: 'es', name: 'Spanish',    flag: '🇪🇸' },
+  { code: 'uk', name: 'Ukrainian',  flag: '🇺🇦' },
+  { code: 'en', name: 'English',    flag: '🇺🇸' },
+  { code: 'pt', name: 'Portuguese', flag: '🇵🇹' },
+  { code: 'fr', name: 'French',     flag: '🇫🇷' },
+  { code: 'de', name: 'German',     flag: '🇩🇪' },
+  { code: 'it', name: 'Italian',    flag: '🇮🇹' },
+  { code: 'ru', name: 'Russian',    flag: '🇷🇺' },
+  { code: 'ja', name: 'Japanese',   flag: '🇯🇵' },
+  { code: 'ko', name: 'Korean',     flag: '🇰🇷' },
+  { code: 'zh', name: 'Chinese',    flag: '🇨🇳' },
+];
+
+const findTarget = (c) => TARGET_LANGS.find(l => l.code === c) || TARGET_LANGS[1];
+const findSource = (c) => SOURCE_LANGS.find(l => l.code === c) || SOURCE_LANGS[0];
+
+let SOURCE_LANG = 'es';
+let TARGET_LANG = 'ru'; // 'uk' isn't supported by OpenAI Realtime — use Russian as the closest fit
+
+function buildSelectors() {
+  const src = $('srcLang'), tgt = $('tgtLang');
+  for (const l of SOURCE_LANGS) {
+    src.add(new Option(`${l.flag}  ${l.name} (${l.code})`, l.code));
+  }
+  for (const l of TARGET_LANGS) {
+    const label = l.supported
+      ? `${l.flag}  ${l.name} (${l.code})`
+      : `${l.flag}  ${l.name} (${l.code}) — not supported`;
+    const opt = new Option(label, l.code);
+    if (!l.supported) opt.disabled = true;
+    tgt.add(opt);
+  }
+  src.value = SOURCE_LANG; tgt.value = TARGET_LANG;
+  src.addEventListener('change', () => { SOURCE_LANG = src.value; updateHeader(); });
+  tgt.addEventListener('change', () => {
+    TARGET_LANG = tgt.value;
+    updateHeader();
+    // If a session is live, update target on the fly via data channel.
+    if (dataChannel && dataChannel.readyState === 'open') {
+      try {
+        dataChannel.send(JSON.stringify({
+          type: 'session.update',
+          session: { audio: { output: { language: TARGET_LANG } } },
+        }));
+        log(`[session.update] → ${TARGET_LANG}`, 'ok');
+      } catch (e) { log(`[session.update] failed: ${e.message}`, 'err'); }
+    }
+  });
+  $('swapBtn').addEventListener('click', () => {
+    // Swap is best-effort — target list is constrained, source is just a label.
+    const a = src.value, b = tgt.value;
+    if (TARGET_LANGS.find(l => l.code === a && l.supported)) {
+      tgt.value = a; TARGET_LANG = a;
+    }
+    if (SOURCE_LANGS.find(l => l.code === b)) {
+      src.value = b; SOURCE_LANG = b;
+    }
+    updateHeader();
+  });
+  updateHeader();
+}
+function updateHeader() {
+  const s = findSource(SOURCE_LANG), t = findTarget(TARGET_LANG);
+  $('title').textContent = `${s.flag} → ${t.flag} OpenAI Realtime Translator`;
+  $('srcLabel').textContent = s.name;
+  $('tgtLabel').textContent = t.name;
+}
+
+// ===== Audio device picker =====
+const DEVICE_LS_KEY = 'realtime.html:audioInputDeviceId';
+let selectedDeviceId = localStorage.getItem(DEVICE_LS_KEY) || '';
+
+async function loadAudioDevices(promptForPermission = false) {
+  try {
+    if (promptForPermission) {
+      try {
+        const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+        tmp.getTracks().forEach(t => t.stop());
+      } catch (e) {
+        log(`[mic] permission denied: ${e.message}`, 'err');
+      }
+    }
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter(d => d.kind === 'audioinput');
+    const sel = $('micDevice');
+    sel.innerHTML = '<option value="">Default</option>';
+    for (const d of inputs) {
+      const label = d.label || `Microphone ${d.deviceId.slice(0, 6)}`;
+      sel.add(new Option(label, d.deviceId));
+    }
+    if (selectedDeviceId && inputs.some(d => d.deviceId === selectedDeviceId)) {
+      sel.value = selectedDeviceId;
+    } else {
+      selectedDeviceId = '';
+    }
+    log(`[mic] enumerated ${inputs.length} input device(s)`);
+  } catch (e) {
+    log(`[mic] enumerateDevices failed: ${e.message}`, 'err');
+  }
+}
+
+$('micDevice').addEventListener('change', () => {
+  selectedDeviceId = $('micDevice').value || '';
+  localStorage.setItem(DEVICE_LS_KEY, selectedDeviceId);
+});
+$('refreshDevicesBtn').addEventListener('click', () => loadAudioDevices(true));
+
+// ===== State =====
+let peerConnection = null;
+let dataChannel = null;
+let micStream = null;
+let translatedAudio = null;
+let meterCtx = null, meterSrc = null, meterAnalyser = null, meterTimer = null;
+let eventCount = 0;
+
+// ===== Volume =====
+$('audioMix').addEventListener('input', applyVolume);
+function applyVolume() {
+  const pct = Number($('audioMix').value);
+  $('mixValue').textContent = `${pct}%`;
+  if (translatedAudio) translatedAudio.volume = pct / 100;
+}
+
+// ===== Server session =====
+async function createSession(targetLanguage) {
+  const r = await fetch('/api/realtime/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetLanguage }),
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || `Session HTTP ${r.status}`);
+  return data;
+}
+
+// ===== Mic capture =====
+async function captureMic() {
+  const constraints = {
+    audio: selectedDeviceId
+      ? { deviceId: { exact: selectedDeviceId }, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      : { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    video: false,
+  };
+  const stream = await navigator.mediaDevices.getUserMedia(constraints);
+  if (stream.getAudioTracks().length === 0) {
+    stream.getTracks().forEach(t => t.stop());
+    throw new Error('No microphone audio track available');
+  }
+  return stream;
+}
+
+function startInputMeter(stream) {
+  meterCtx = new AudioContext();
+  meterSrc = meterCtx.createMediaStreamSource(stream);
+  meterAnalyser = meterCtx.createAnalyser();
+  meterAnalyser.fftSize = 1024;
+  meterSrc.connect(meterAnalyser);
+  const buf = new Float32Array(meterAnalyser.fftSize);
+  meterTimer = setInterval(() => {
+    meterAnalyser.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (const s of buf) sum += s * s;
+    const rms = Math.sqrt(sum / buf.length);
+    $('meterFill').style.width = `${Math.min(100, rms * 600)}%`;
+  }, 80);
+}
+
+// ===== WebRTC connect =====
+async function connectRealtime(session, stream) {
+  peerConnection = new RTCPeerConnection();
+
+  translatedAudio = new Audio();
+  translatedAudio.autoplay = true;
+  translatedAudio.playsInline = true;
+  applyVolume();
+
+  peerConnection.onconnectionstatechange = () => {
+    const s = peerConnection.connectionState;
+    $('mConn').textContent = s;
+    log(`[pc] connection: ${s}`);
+  };
+  peerConnection.oniceconnectionstatechange = () => {
+    const s = peerConnection.iceConnectionState;
+    $('mIce').textContent = s;
+  };
+  peerConnection.ontrack = ({ streams }) => {
+    log('[pc] remote track received', 'ok');
+    translatedAudio.srcObject = streams[0];
+    applyVolume();
+    translatedAudio.play().catch((e) => log(`[audio] play failed: ${e.message}`, 'err'));
+  };
+
+  dataChannel = peerConnection.createDataChannel('oai-events');
+  dataChannel.onopen = () => {
+    $('mDc').textContent = 'open';
+    log('[dc] open', 'ok');
+    setStatus(true);
+  };
+  dataChannel.onclose = () => {
+    $('mDc').textContent = 'closed';
+    log('[dc] closed');
+  };
+  dataChannel.onmessage = handleRealtimeEvent;
+
+  for (const track of stream.getAudioTracks()) {
+    peerConnection.addTrack(track, stream);
+  }
+
+  const offer = await peerConnection.createOffer();
+  await peerConnection.setLocalDescription(offer);
+
+  const sdpRes = await fetch('https://api.openai.com/v1/realtime/translations/calls', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${session.client_secret}`,
+      'Content-Type': 'application/sdp',
+    },
+    body: offer.sdp,
+  });
+  const answerSdp = await sdpRes.text();
+  if (!sdpRes.ok) throw new Error(`SDP exchange ${sdpRes.status}: ${answerSdp}`);
+  await peerConnection.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+  log(`[pc] connected for target=${session.targetLanguage}`, 'ok');
+}
+
+// ===== Events from data channel =====
+function handleRealtimeEvent(msg) {
+  let evt;
+  try { evt = JSON.parse(msg.data); } catch { return; }
+  eventCount++;
+  $('mEvents').textContent = String(eventCount);
+
+  switch (evt.type) {
+    case 'session.input_transcript.delta':
+      if (typeof evt.delta === 'string') appendSrc(evt.delta);
+      break;
+    case 'session.input_transcript.completed':
+      finalizeSrc();
+      break;
+    case 'session.output_transcript.delta':
+      if (typeof evt.delta === 'string') appendTgt(evt.delta);
+      break;
+    case 'session.output_transcript.completed':
+      finalizeTgt();
+      break;
+    case 'session.created':
+    case 'session.updated':
+    case 'output_audio_buffer.started':
+      log(`[evt] ${evt.type}`);
+      break;
+    case 'error':
+      log(`[evt] error: ${JSON.stringify(evt.error || evt)}`, 'err');
+      break;
+    default:
+      // Quiet — too chatty otherwise. Uncomment for full firehose.
+      // log(`[evt] ${evt.type}`);
+      break;
+  }
+}
+
+let srcAccum = '';
+let tgtAccum = '';
+function appendSrc(t) {
+  srcAccum += t;
+  $('srcText').textContent = srcAccum;
+  $('srcStatus').textContent = 'live';
+}
+function finalizeSrc() {
+  if (!srcAccum) return;
+  srcAccum += '\n';
+  $('srcText').textContent = srcAccum;
+  $('srcStatus').textContent = 'segment done';
+}
+function appendTgt(t) {
+  tgtAccum += t;
+  $('tgtText').textContent = tgtAccum;
+  $('tgtStatus').textContent = 'streaming';
+}
+function finalizeTgt() {
+  if (!tgtAccum) return;
+  tgtAccum += '\n';
+  $('tgtText').textContent = tgtAccum;
+  $('tgtStatus').textContent = 'segment done';
+}
+
+// ===== Lifecycle =====
+function setStatus(live) {
+  $('statusDot').className = live ? 'status live' : 'status';
+}
+function setControls(running) {
+  $('startBtn').disabled = running;
+  $('stopBtn').disabled = !running;
+  $('srcLang').disabled = running;
+  $('micDevice').disabled = running;
+  $('refreshDevicesBtn').disabled = running;
+  $('swapBtn').disabled = running;
+  // tgtLang stays enabled — can be changed mid-session via session.update.
+}
+
+async function start() {
+  setControls(true);
+  $('srcText').textContent = '—';
+  $('tgtText').textContent = '—';
+  srcAccum = ''; tgtAccum = ''; eventCount = 0;
+  $('mEvents').textContent = '0';
+
+  try {
+    const target = TARGET_LANGS.find(l => l.code === TARGET_LANG && l.supported);
+    if (!target) {
+      throw new Error(`Target language "${TARGET_LANG}" is not supported by OpenAI Realtime Translation. Supported: ${TARGET_LANGS.filter(l=>l.supported).map(l=>l.code).join(', ')}`);
+    }
+
+    log(`[start] requesting microphone…`);
+    micStream = await captureMic();
+    startInputMeter(micStream);
+
+    log(`[start] creating session (target=${TARGET_LANG})…`);
+    const session = await createSession(TARGET_LANG);
+    log(`[start] session ok, model=${session.model}`, 'ok');
+
+    log(`[start] connecting WebRTC…`);
+    await connectRealtime(session, micStream);
+  } catch (e) {
+    log(`[start] error: ${e.message}`, 'err');
+    await stop();
+    return;
+  }
+}
+
+async function stop() {
+  setStatus(false);
+  if (meterTimer) { clearInterval(meterTimer); meterTimer = null; }
+  meterSrc?.disconnect(); meterAnalyser?.disconnect();
+  meterSrc = null; meterAnalyser = null;
+  if (meterCtx?.state !== 'closed') { try { await meterCtx?.close(); } catch {} }
+  meterCtx = null;
+
+  try { dataChannel?.close(); } catch {}
+  dataChannel = null;
+  try { peerConnection?.close(); } catch {}
+  peerConnection = null;
+
+  micStream?.getTracks().forEach(t => t.stop());
+  micStream = null;
+
+  if (translatedAudio) {
+    try { translatedAudio.pause(); translatedAudio.srcObject = null; } catch {}
+  }
+  translatedAudio = null;
+
+  $('meterFill').style.width = '0%';
+  $('mConn').textContent = '—';
+  $('mIce').textContent = '—';
+  $('mDc').textContent = '—';
+  $('srcStatus').textContent = 'idle';
+  $('tgtStatus').textContent = '—';
+  setControls(false);
+  log('[stop] cleaned up');
+}
+
+$('startBtn').addEventListener('click', start);
+$('stopBtn').addEventListener('click', stop);
+
+// ===== Init =====
+buildSelectors();
+loadAudioDevices(false);
+applyVolume();
+log('Ready. Click "Start translating" to begin.');
+</script>
+</body>
+</html>
