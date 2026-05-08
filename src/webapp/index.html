@@ -804,7 +804,7 @@
     <div id="mainContent" style="display:none">
       <div class="app-title" id="appTitle">Voice Translator</div>
       <!-- Bump APP_VERSION on every commit so cache busts are visible to user. -->
-      <div class="app-version" id="appVersion">build · 2026-05-08 · v12</div>
+      <div class="app-version" id="appVersion">build · 2026-05-08 · v13</div>
 
       <!-- ==================== VOICE TAB (legacy one-shot flow) ==================== -->
       <div class="tab-content" data-tab="voice">
@@ -965,6 +965,28 @@
   </div>
 
   <script>
+    // ===== Helper: copy a log <div> to clipboard, fall back to selectable text on failure. =====
+    async function copyLogToClipboard(btn, logEl) {
+      if (!logEl) return;
+      const text = Array.from(logEl.querySelectorAll('div')).map(d => d.textContent).join('\n')
+                || logEl.textContent || '';
+      const original = btn?.textContent;
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          // Fallback for non-secure contexts / older WebViews.
+          const ta = document.createElement('textarea');
+          ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.select();
+          document.execCommand('copy'); ta.remove();
+        }
+        if (btn) { btn.textContent = '✓ Copied'; setTimeout(() => { btn.textContent = original; }, 1400); }
+      } catch (e) {
+        if (btn) { btn.textContent = '✗ Failed'; setTimeout(() => { btn.textContent = original; }, 1400); }
+      }
+    }
+
     // ===== Telegram WebApp =====
     const WebApp = window.Telegram.WebApp;
     WebApp.ready();
@@ -2855,7 +2877,10 @@
             </div>
 
             <div class="live-card">
-              <div class="label">Log</div>
+              <div class="label">
+                <span>Log</span>
+                <button id="rtCopyLog" type="button" style="background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:2px 8px;font-size:10px;font-weight:600;cursor:pointer">📋 Copy</button>
+              </div>
               <div class="live-log" id="rtLog"></div>
             </div>
 
@@ -2942,6 +2967,8 @@
           const totalMs = state.stopDeadline - state.sessionStartedAt;
           log(`[continue] deadline extended → +2:00 (total ${mmss(totalMs)})`, 'ok');
         });
+
+        $id('rtCopyLog').addEventListener('click', () => copyLogToClipboard($id('rtCopyLog'), $id('rtLog')));
       }
 
       async function loadAudioDevices(promptForPermission) {
@@ -3452,7 +3479,10 @@ Rules:
             </div>
 
             <div class="live-card">
-              <div class="label">Log</div>
+              <div class="label">
+                <span>Log</span>
+                <button id="chCopyLog" type="button" style="background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:2px 8px;font-size:10px;font-weight:600;cursor:pointer">📋 Copy</button>
+              </div>
               <div class="live-log" id="chLog"></div>
             </div>
 
@@ -3519,6 +3549,7 @@ Rules:
         $id('chTextInput').addEventListener('keydown', (e) => {
           if (e.key === 'Enter') { e.preventDefault(); sendText(); }
         });
+        $id('chCopyLog').addEventListener('click', () => copyLogToClipboard($id('chCopyLog'), $id('chLog')));
       }
 
       async function loadAudioDevices(promptForPermission) {
