@@ -268,6 +268,82 @@ Translate ONLY the NEW source segment provided by the user, as a natural continu
     }
   });
 
+  // OpenAI Realtime CHAT — issue ephemeral client_secret for conversational
+  // gpt-realtime (NOT gpt-realtime-translate). Same browser↔OpenAI WebRTC
+  // approach; server only mints the short-lived token. Default instructions
+  // can be overridden by the client. Mirrors scripts/realtime-chat-server.js.
+  app.post('/api/realtime-chat/session', async (req, res) => {
+    try {
+      const {
+        voice = 'marin',
+        instructions = '',
+        inputLanguage = '',
+        roomMode = false,
+        vadThreshold = 0.5,
+        transcriptionModel = 'gpt-4o-transcribe',
+      } = req.body || {};
+
+      if (!config.openaiRealtimeChat.apiKey) {
+        return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+      }
+
+      const noiseReduction = roomMode ? null : { type: 'near_field' };
+      const threshold = Math.max(0, Math.min(1, Number(vadThreshold) || 0.5));
+
+      const body = {
+        session: {
+          type: 'realtime',
+          model: config.openaiRealtimeChat.model,
+          audio: {
+            input: {
+              transcription: {
+                model: transcriptionModel,
+                ...(inputLanguage ? { language: inputLanguage } : {}),
+              },
+              noise_reduction: noiseReduction,
+              turn_detection: {
+                type: 'server_vad',
+                threshold,
+                prefix_padding_ms: 300,
+                silence_duration_ms: 500,
+              },
+            },
+            output: { voice },
+          },
+          ...(instructions ? { instructions } : {}),
+        },
+      };
+
+      const r = await fetch(config.openaiRealtimeChat.clientSecretUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.openaiRealtimeChat.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!r.ok) {
+        const errText = await r.text();
+        logger.error(`[Realtime-Chat] client_secret ${r.status}: ${errText}`);
+        return res.status(r.status).json({ error: errText });
+      }
+      const data = await r.json();
+      if (!data || typeof data.value !== 'string') {
+        return res.status(502).json({ error: 'OpenAI did not return a client_secret value' });
+      }
+      logger.info(`[Realtime-Chat] session created (model=${config.openaiRealtimeChat.model}, voice=${voice})`);
+      res.json({
+        client_secret: data.value,
+        expires_at: data.expires_at ?? null,
+        model: config.openaiRealtimeChat.model,
+      });
+    } catch (e) {
+      logger.error('[Realtime-Chat] session error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Text-to-Speech via ElevenLabs
   app.post('/api/tts', async (req, res) => {
     try {

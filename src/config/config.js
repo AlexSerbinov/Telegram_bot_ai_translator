@@ -23,6 +23,13 @@ const config = {
     clientSecretUrl: 'https://api.openai.com/v1/realtime/translations/client_secrets',
   },
 
+  // OpenAI Realtime CHAT (regular conversational model, used by Mini App "Chat" tab + /webapp/realtime-chat.html)
+  openaiRealtimeChat: {
+    apiKey: process.env.OPENAI_API_KEY,
+    model: process.env.OPENAI_REALTIME_CHAT_MODEL || 'gpt-realtime',
+    clientSecretUrl: 'https://api.openai.com/v1/realtime/client_secrets',
+  },
+
   // ElevenLabs Configuration
   elevenLabs: {
     apiKey: process.env.ELEVEN_LABS_API_KEY,

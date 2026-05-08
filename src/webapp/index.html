@@ -804,7 +804,7 @@
     <div id="mainContent" style="display:none">
       <div class="app-title" id="appTitle">Voice Translator</div>
       <!-- Bump APP_VERSION on every commit so cache busts are visible to user. -->
-      <div class="app-version" id="appVersion">build · 2026-05-08 · v5</div>
+      <div class="app-version" id="appVersion">build · 2026-05-08 · v6</div>
 
       <!-- ==================== VOICE TAB (legacy one-shot flow) ==================== -->
       <div class="tab-content" data-tab="voice">
@@ -925,6 +925,11 @@
         <div id="realtimeTabRoot"><!-- filled in by Realtime tab module --></div>
       </div>
 
+      <!-- ==================== CHAT TAB (OpenAI gpt-realtime conversational, with system prompt) ==================== -->
+      <div class="tab-content" data-tab="chat" hidden>
+        <div id="chatTabRoot"><!-- filled in by Chat tab module --></div>
+      </div>
+
       <!-- Bottom navigation -->
       <nav class="bottom-nav">
         <button class="nav-tab active" data-tab="voice" type="button">
@@ -946,6 +951,12 @@
             <line x1="12" y1="2" x2="12" y2="6"/><line x1="8" y1="19" x2="8" y2="22"/><line x1="16" y1="19" x2="16" y2="22"/>
           </svg>
           <span>Realtime</span>
+        </button>
+        <button class="nav-tab" data-tab="chat" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span>Chat</span>
         </button>
       </nav>
     </div>
@@ -2224,20 +2235,28 @@
       const navBtns = document.querySelectorAll('.nav-tab');
       const tabs = document.querySelectorAll('.tab-content');
       const titleEl = document.getElementById('appTitle');
-      const TITLES = { voice: 'Voice Translator', live: 'Live Translator', realtime: 'Realtime Translator' };
+      const TITLES = {
+        voice: 'Voice Translator',
+        live: 'Live Translator',
+        realtime: 'Realtime Translator',
+        chat: 'Chat (gpt-realtime)',
+      };
 
       function activate(name) {
         navBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
         tabs.forEach(t => { t.hidden = t.dataset.tab !== name; });
         if (titleEl && TITLES[name]) titleEl.textContent = TITLES[name];
         try { localStorage.setItem(TAB_LS_KEY, name); } catch {}
-        // When leaving any session-bearing tab, hard-stop it. Realtime is
-        // the cost-critical one — never let it linger on tab switch.
+        // When leaving any session-bearing tab, hard-stop it. Realtime/Chat are
+        // the cost-critical ones — never let them linger on tab switch.
         if (name !== 'live' && window.LiveTab && window.LiveTab.stopIfRunning) {
           try { window.LiveTab.stopIfRunning(); } catch {}
         }
         if (name !== 'realtime' && window.RealtimeTab && window.RealtimeTab.stopIfRunning) {
           try { window.RealtimeTab.stopIfRunning('tab-switch'); } catch {}
+        }
+        if (name !== 'chat' && window.ChatTab && window.ChatTab.stopIfRunning) {
+          try { window.ChatTab.stopIfRunning('tab-switch'); } catch {}
         }
         // Lazy-init the tab UI on first entry.
         if (name === 'live' && window.LiveTab && !window.LiveTab._initialized) {
@@ -2246,19 +2265,23 @@
         if (name === 'realtime' && window.RealtimeTab && !window.RealtimeTab._initialized) {
           try { window.RealtimeTab.init(); } catch (e) { console.error('Realtime init', e); }
         }
+        if (name === 'chat' && window.ChatTab && !window.ChatTab._initialized) {
+          try { window.ChatTab.init(); } catch (e) { console.error('Chat init', e); }
+        }
       }
 
       navBtns.forEach(b => b.addEventListener('click', () => activate(b.dataset.tab)));
 
       // Initial tab: ?tab=… → localStorage → 'voice'
+      const VALID_TABS = new Set(['voice', 'live', 'realtime', 'chat']);
       let initial = 'voice';
       const params = new URLSearchParams(location.search);
       const qp = params.get('tab');
-      if (qp === 'live' || qp === 'realtime') initial = qp;
+      if (qp && VALID_TABS.has(qp)) initial = qp;
       else {
         try {
           const saved = localStorage.getItem(TAB_LS_KEY);
-          if (saved === 'live' || saved === 'voice' || saved === 'realtime') initial = saved;
+          if (saved && VALID_TABS.has(saved)) initial = saved;
         } catch {}
       }
       // Defer so DOM/loading state finishes
@@ -3224,6 +3247,573 @@
           const mb = wa.MainButton;
           mb.setText('🔴 STOP'); mb.color = '#E53935'; mb.textColor = '#FFFFFF';
           if (!mb._rtBound) { mb.onClick(() => hardStop('telegram-mainbutton')); mb._rtBound = true; }
+          mb.show();
+        } catch {}
+      }
+      function hideTelegramStopButton() {
+        try { window.Telegram?.WebApp?.MainButton?.hide(); } catch {}
+      }
+    })();
+
+    // ===================================================================
+    // Chat Tab — OpenAI gpt-realtime (CONVERSATIONAL, NOT translate). The
+    // model sits between two speakers (default prompt: ru/es bilingual
+    // translator). Session config supports voice picker, custom system
+    // instructions, room mode, VAD threshold, and a text input.
+    //
+    // Same 7-layer cost guard as RealtimeTab. Default deadline 3 min,
+    // Continue +2 min on warn-window press.
+    // ===================================================================
+    window.ChatTab = (function() {
+      const C_VOICE_LS  = 'chat.voice';
+      const C_LANG_LS   = 'chat.lang';
+      const C_TX_LS     = 'chat.transcribeModel';
+      const C_DEV_LS    = 'chat.mic';
+      const C_INSTR_LS  = 'chat.instructions';
+      const C_ROOM_LS   = 'chat.roomMode';
+      const C_VAD_LS    = 'chat.vadThreshold';
+
+      const WARN_LEAD_MS = 30 * 1000;
+      const BASE_LIFE_MS = 3 * 60 * 1000;
+      const EXTEND_MS    = 2 * 60 * 1000;
+
+      const VOICES = ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'];
+      const LANG_HINTS = [
+        { code: '',   name: 'auto-detect' },
+        { code: 'uk', name: 'Ukrainian' },
+        { code: 'es', name: 'Spanish' },
+        { code: 'en', name: 'English' },
+        { code: 'ru', name: 'Russian' },
+        { code: 'de', name: 'German' },
+        { code: 'fr', name: 'French' },
+        { code: 'it', name: 'Italian' },
+        { code: 'pt', name: 'Portuguese' },
+      ];
+      const TX_MODELS = [
+        { v: 'gpt-4o-transcribe',      label: 'gpt-4o-transcribe (accurate)' },
+        { v: 'gpt-4o-mini-transcribe', label: 'gpt-4o-mini-transcribe (fast)' },
+        { v: 'whisper-1',              label: 'whisper-1 (legacy)' },
+      ];
+      // Default prompt: bilingual translator, mirrors realtime-chat.html exactly.
+      const DEFAULT_INSTRUCTIONS = `You are a live voice translator sitting between two speakers: one speaks Russian, the other speaks Spanish. You are an invisible translation channel — nothing more.
+
+Rules:
+1. Wait for the speaker to finish their phrase before translating. Do not start translating mid-sentence.
+2. If you hear Russian → output the Spanish translation. If you hear Spanish → output the Russian translation.
+3. Output ONLY the translation. No prefixes like "Translation:", "En español:", "Перевод:", "Я перекладаю". No commentary, no acknowledgements, no questions, no opinions.
+4. Do not engage in conversation. Do not react to the content. You are not an assistant — you are a translator.
+5. Preserve the original tone, register and emotion. Match the speaker's style (formal/informal, calm/excited).
+6. If the audio is unclear, silent, or not speech — stay silent. Do not guess, do not ask for clarification.
+7. Translate proper names and technical terms naturally; do not transliterate unless that's the natural choice.
+8. Use neutral/peninsular Spanish unless the speaker clearly uses Latin American forms — then match.`;
+
+      const state = {
+        running: false,
+        voice:        localStorage.getItem(C_VOICE_LS)  || 'marin',
+        inputLang:    localStorage.getItem(C_LANG_LS)   || '',
+        txModel:      localStorage.getItem(C_TX_LS)     || 'gpt-4o-transcribe',
+        micDeviceId:  localStorage.getItem(C_DEV_LS)    || '',
+        instructions: localStorage.getItem(C_INSTR_LS)  || DEFAULT_INSTRUCTIONS,
+        roomMode:     localStorage.getItem(C_ROOM_LS)   === '1',
+        vadThreshold: parseFloat(localStorage.getItem(C_VAD_LS) ?? '0.5') || 0.5,
+        pc: null, dc: null, micStream: null, audioEl: null,
+        sessionStartedAt: 0,
+        stopDeadline: 0,
+        eventCount: 0,
+      };
+      const messages = new Map(); // item_id → { role, body, text }
+      let warnTimer = null, stopTimer = null, sessionTimer = null, statsTimer = null, watchdogTimer = null;
+
+      const api = { _initialized: false, init, stopIfRunning };
+      return api;
+
+      function $id(id) { return document.getElementById(id); }
+      function mmss(ms) { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; }
+      function log(msg, cls) {
+        const el = $id('chLog'); if (!el) return;
+        const line = document.createElement('div');
+        line.textContent = `${new Date().toLocaleTimeString()} ${msg}`;
+        if (cls) line.classList.add(cls);
+        el.appendChild(line); el.scrollTop = el.scrollHeight;
+      }
+
+      function init() {
+        if (api._initialized) return;
+        api._initialized = true;
+        renderShell();
+        bindControls();
+        loadAudioDevices(false);
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden && state.running) hardStop('hidden');
+        });
+        window.addEventListener('pagehide', () => { if (state.running) hardStop('pagehide'); });
+        window.addEventListener('beforeunload', () => { if (state.running) hardStop('unload'); });
+        watchdogTimer = setInterval(() => {
+          if (state.running) return;
+          if (state.pc || state.micStream) {
+            log('[watchdog] LEAK detected — forcing hardStop', 'err');
+            hardStop('watchdog-leak');
+          }
+        }, 5000);
+      }
+
+      function renderShell() {
+        const root = $id('chatTabRoot'); if (!root) return;
+        const voiceOpts = VOICES.map(v => `<option value="${v}">${v}</option>`).join('');
+        const langOpts = LANG_HINTS.map(l => `<option value="${l.code}">${l.name}${l.code ? ' (' + l.code + ')' : ''}</option>`).join('');
+        const txOpts = TX_MODELS.map(m => `<option value="${m.v}">${m.label}</option>`).join('');
+        root.innerHTML = `
+          <div class="live-root">
+
+            <div class="live-langs">
+              <label style="font-size:12px;color:var(--text-secondary)">🗣 Voice:</label>
+              <select id="chVoice">${voiceOpts}</select>
+              <label style="font-size:12px;color:var(--text-secondary)">🌐 Input:</label>
+              <select id="chLang">${langOpts}</select>
+            </div>
+
+            <div class="live-langs">
+              <label style="font-size:12px;color:var(--text-secondary)">📝 Transcribe:</label>
+              <select id="chTxModel" style="font-size:12px">${txOpts}</select>
+            </div>
+
+            <div class="live-card">
+              <div class="label"><span>System prompt (instructions)</span><button id="chInstrReset" type="button" style="background:transparent;color:var(--text-secondary);border:1px solid var(--divider);border-radius:6px;padding:2px 8px;font-size:10px;cursor:pointer">↺ default</button></div>
+              <textarea id="chInstr" rows="6" style="width:100%;background:#fff;color:var(--text-primary);border:1px solid var(--divider);border-radius:8px;padding:8px;font-family:inherit;font-size:12px;line-height:1.4;resize:vertical;min-height:80px"></textarea>
+            </div>
+
+            <div class="live-langs" style="gap:14px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text-secondary)">
+                <input id="chRoom" type="checkbox"> 🔊 Room mode
+              </label>
+              <label style="font-size:12px;color:var(--text-secondary)">VAD:</label>
+              <input id="chVad" type="range" min="0.1" max="0.9" step="0.05" style="width:100px;accent-color:var(--accent)">
+              <span id="chVadVal" style="font-family:ui-monospace,monospace;font-weight:700;color:var(--accent);min-width:36px;font-size:12px">0.50</span>
+            </div>
+
+            <!-- LIVE indicator + deadline -->
+            <div id="chSessionBar" hidden style="text-align:center;padding:8px 12px;margin-top:6px;background:rgba(229,57,53,0.10);border:1px solid rgba(229,57,53,0.30);border-radius:12px;font-family:ui-monospace,monospace;color:var(--recording);font-weight:700;letter-spacing:0.3px;font-size:13px">
+              🔴 GPT-Realtime LIVE — <span id="chElapsed">0:00</span>
+              <span style="color:var(--text-secondary);font-weight:500;font-size:11px"> / deadline <span id="chDeadlineLeft">3:00</span></span>
+            </div>
+
+            <div class="live-controls">
+              <button class="live-start" id="chStartBtn" type="button" aria-label="Start / Stop">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1"/><line x1="12" y1="19" x2="12" y2="22"/>
+                </svg>
+              </button>
+            </div>
+
+            <div class="live-controls" id="chContinueRow" hidden style="flex-direction:column;gap:8px;align-items:center">
+              <div style="font-size:12px;color:var(--recording);font-weight:600">⏰ <span id="chWarnLeft">30</span>s до автозупинки (економія коштів)</div>
+              <button class="swap-btn" id="chContinueBtn" type="button" style="padding:8px 18px;font-weight:700;background:var(--recording);color:#fff;border-color:var(--recording)">Продовжити ще +2 хв</button>
+            </div>
+
+            <div class="live-card">
+              <div class="label"><span>Conversation</span><span id="chConnStatus">idle</span></div>
+              <div id="chTranscript" style="display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto;padding:4px"></div>
+              <div style="display:flex;gap:8px;margin-top:10px">
+                <input id="chTextInput" type="text" placeholder="…або напиши текстом і натисни Send (Enter)" disabled style="flex:1;background:#fff;color:var(--text-primary);border:1px solid var(--divider);border-radius:8px;padding:8px 10px;font-size:13px">
+                <button id="chSendBtn" type="button" disabled class="swap-btn" style="padding:8px 16px;font-weight:600">Send</button>
+              </div>
+            </div>
+
+            <div class="live-langs" style="font-size:12px;color:var(--text-secondary)">
+              🎙
+              <select id="chMic" style="background:#fff;color:var(--text-primary);border:1px solid var(--divider);border-radius:8px;padding:6px 8px;font-size:12px;max-width:220px"><option value="">Default</option></select>
+              <button id="chRefreshMic" type="button" style="background:transparent;color:var(--text-secondary);border:1px solid var(--divider);border-radius:8px;padding:5px 9px;font-size:11px;cursor:pointer">↻</button>
+            </div>
+
+            <div class="live-card">
+              <div class="label">Log</div>
+              <div class="live-log" id="chLog"></div>
+            </div>
+
+            <audio id="chAudio" playsinline autoplay style="display:none"></audio>
+          </div>
+        `;
+        $id('chVoice').value = state.voice;
+        $id('chLang').value = state.inputLang;
+        $id('chTxModel').value = state.txModel;
+        $id('chInstr').value = state.instructions;
+        $id('chRoom').checked = state.roomMode;
+        $id('chVad').value = String(state.vadThreshold);
+        $id('chVadVal').textContent = state.vadThreshold.toFixed(2);
+      }
+
+      function bindControls() {
+        $id('chVoice').addEventListener('change', () => {
+          state.voice = $id('chVoice').value;
+          localStorage.setItem(C_VOICE_LS, state.voice);
+        });
+        $id('chLang').addEventListener('change', () => {
+          state.inputLang = $id('chLang').value;
+          localStorage.setItem(C_LANG_LS, state.inputLang);
+        });
+        $id('chTxModel').addEventListener('change', () => {
+          state.txModel = $id('chTxModel').value;
+          localStorage.setItem(C_TX_LS, state.txModel);
+        });
+        $id('chInstr').addEventListener('input', () => {
+          state.instructions = $id('chInstr').value;
+          localStorage.setItem(C_INSTR_LS, state.instructions);
+        });
+        $id('chInstrReset').addEventListener('click', () => {
+          state.instructions = DEFAULT_INSTRUCTIONS;
+          $id('chInstr').value = DEFAULT_INSTRUCTIONS;
+          localStorage.setItem(C_INSTR_LS, DEFAULT_INSTRUCTIONS);
+          log('[instr] reset to default');
+        });
+        $id('chRoom').addEventListener('change', () => {
+          state.roomMode = $id('chRoom').checked;
+          localStorage.setItem(C_ROOM_LS, state.roomMode ? '1' : '0');
+        });
+        $id('chVad').addEventListener('input', () => {
+          state.vadThreshold = Number($id('chVad').value);
+          $id('chVadVal').textContent = state.vadThreshold.toFixed(2);
+          localStorage.setItem(C_VAD_LS, String(state.vadThreshold));
+        });
+        $id('chMic').addEventListener('change', () => {
+          state.micDeviceId = $id('chMic').value || '';
+          localStorage.setItem(C_DEV_LS, state.micDeviceId);
+        });
+        $id('chRefreshMic').addEventListener('click', () => loadAudioDevices(true));
+        $id('chStartBtn').addEventListener('click', () => {
+          if (state.running) hardStop('manual');
+          else start().catch(e => { log(`[start] error: ${e.message}`, 'err'); hardStop('error:' + e.message); });
+        });
+        $id('chContinueBtn').addEventListener('click', () => {
+          state.stopDeadline += EXTEND_MS;
+          $id('chContinueRow').hidden = true;
+          armTimers();
+          log(`[continue] deadline extended → +2:00 (total ${mmss(state.stopDeadline - state.sessionStartedAt)})`, 'ok');
+        });
+        $id('chSendBtn').addEventListener('click', sendText);
+        $id('chTextInput').addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); sendText(); }
+        });
+      }
+
+      async function loadAudioDevices(promptForPermission) {
+        try {
+          if (promptForPermission) {
+            try {
+              const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+              tmp.getTracks().forEach(t => t.stop());
+            } catch (e) { log(`[mic] permission denied: ${e.message}`, 'err'); }
+          }
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const inputs = devices.filter(d => d.kind === 'audioinput');
+          const sel = $id('chMic');
+          sel.innerHTML = '<option value="">Default</option>';
+          for (const d of inputs) {
+            const label = d.label || `Microphone ${d.deviceId.slice(0, 6)}`;
+            sel.add(new Option(label, d.deviceId));
+          }
+          if (state.micDeviceId && inputs.some(d => d.deviceId === state.micDeviceId)) {
+            sel.value = state.micDeviceId;
+          } else { state.micDeviceId = ''; }
+        } catch (e) { log(`[mic] enumerate failed: ${e.message}`, 'err'); }
+      }
+
+      // ---- transcript ----
+      function renderMessage(id, role, text) {
+        let entry = messages.get(id);
+        if (!entry) {
+          const el = document.createElement('div');
+          el.style.cssText = `border-radius:10px;padding:10px 12px;line-height:1.4;font-size:14px;white-space:pre-wrap;word-break:break-word;${
+            role === 'user'
+              ? 'background:rgba(91,127,255,0.10);border:1px solid rgba(91,127,255,0.25)'
+              : 'background:rgba(74,222,128,0.10);border:1px solid rgba(74,222,128,0.25)'
+          }`;
+          const who = document.createElement('div');
+          who.style.cssText = 'font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-secondary);margin-bottom:4px';
+          who.textContent = role === 'user' ? 'You' : 'Assistant';
+          const body = document.createElement('div');
+          el.appendChild(who); el.appendChild(body);
+          $id('chTranscript').appendChild(el);
+          entry = { role, el, body, text: '' };
+          messages.set(id, entry);
+        }
+        entry.text = text;
+        entry.body.textContent = text;
+        const t = $id('chTranscript');
+        t.scrollTop = t.scrollHeight;
+      }
+      function appendMessage(id, role, delta) {
+        let entry = messages.get(id);
+        if (!entry) { renderMessage(id, role, ''); entry = messages.get(id); }
+        entry.text += delta;
+        entry.body.textContent = entry.text;
+        const t = $id('chTranscript');
+        t.scrollTop = t.scrollHeight;
+      }
+
+      function sendText() {
+        const inp = $id('chTextInput');
+        const text = inp.value.trim();
+        if (!text || !state.dc || state.dc.readyState !== 'open') return;
+        try {
+          state.dc.send(JSON.stringify({
+            type: 'conversation.item.create',
+            item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
+          }));
+          state.dc.send(JSON.stringify({ type: 'response.create' }));
+          renderMessage(`local-${Date.now()}`, 'user', text);
+          inp.value = '';
+        } catch (e) { log(`[send] failed: ${e.message}`, 'err'); }
+      }
+
+      async function start() {
+        if (state.running) return;
+        $id('chTranscript').innerHTML = '';
+        messages.clear();
+        state.eventCount = 0;
+
+        state.audioEl = $id('chAudio');
+        if (state.audioEl) {
+          state.audioEl.muted = false; state.audioEl.volume = 1.0;
+          try { const p = state.audioEl.play(); if (p && p.catch) p.catch(() => {}); } catch {}
+        }
+
+        state.running = true;
+        $id('chStartBtn').classList.add('live');
+        $id('chConnStatus').textContent = 'connecting…';
+
+        log(`[chat] requesting mic (room=${state.roomMode})…`);
+        const baseAudio = state.roomMode
+          ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+          : { echoCancellation: true,  noiseSuppression: true,  autoGainControl: true };
+        const constraints = {
+          audio: state.micDeviceId ? { deviceId: { exact: state.micDeviceId }, ...baseAudio } : baseAudio,
+          video: false,
+        };
+        state.micStream = await navigator.mediaDevices.getUserMedia(constraints);
+        const micTrack = state.micStream.getAudioTracks()[0];
+        if (!micTrack) throw new Error('No mic audio track');
+        log(`[chat] mic: ready=${micTrack.readyState}, label="${micTrack.label}"`, 'ok');
+
+        log(`[chat] minting client_secret (voice=${state.voice})…`);
+        const sessRes = await fetch('/api/realtime-chat/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            voice: state.voice,
+            instructions: state.instructions,
+            inputLanguage: state.inputLang,
+            roomMode: state.roomMode,
+            vadThreshold: state.vadThreshold,
+            transcriptionModel: state.txModel,
+          }),
+        });
+        const sess = await sessRes.json();
+        if (!sessRes.ok) throw new Error(sess.error || `session HTTP ${sessRes.status}`);
+        log(`[chat] session ok, model=${sess.model}`, 'ok');
+
+        state.pc = new RTCPeerConnection();
+        state.pc.ontrack = ({ streams, track }) => {
+          log(`[chat] remote track: kind=${track.kind}`, 'ok');
+          if (state.audioEl) {
+            state.audioEl.srcObject = streams[0];
+            const p = state.audioEl.play();
+            if (p && p.catch) p.catch(e => log(`[chat] play err: ${e.message}`, 'err'));
+          }
+        };
+        state.pc.onconnectionstatechange = () => {
+          const cs = state.pc?.connectionState;
+          log(`[chat] pc: ${cs}`);
+          $id('chConnStatus').textContent = cs;
+          if (cs === 'failed' || cs === 'disconnected') hardStop('pc:' + cs);
+        };
+        state.pc.oniceconnectionstatechange = () => log(`[chat] ice: ${state.pc?.iceConnectionState}`);
+
+        state.dc = state.pc.createDataChannel('oai-events');
+        state.dc.onopen = () => {
+          log('[chat] data channel open', 'ok');
+          $id('chConnStatus').textContent = 'live';
+          $id('chTextInput').disabled = false;
+          $id('chSendBtn').disabled = false;
+          state.sessionStartedAt = Date.now();
+          state.stopDeadline = state.sessionStartedAt + BASE_LIFE_MS;
+          armTimers();
+          startSessionTimer();
+          startStats();
+          showTelegramStopButton();
+        };
+        state.dc.onmessage = handleEvent;
+
+        for (const track of state.micStream.getAudioTracks()) {
+          state.pc.addTrack(track, state.micStream);
+        }
+        const offer = await state.pc.createOffer();
+        await state.pc.setLocalDescription(offer);
+        const sdpRes = await fetch(`https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(sess.model)}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${sess.client_secret}`,
+            'Content-Type': 'application/sdp',
+          },
+          body: offer.sdp,
+        });
+        const answerSdp = await sdpRes.text();
+        if (!sdpRes.ok) throw new Error(`SDP ${sdpRes.status}: ${answerSdp}`);
+        await state.pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+        log(`[chat] connected, model=${sess.model}`, 'ok');
+      }
+
+      function handleEvent(msg) {
+        let evt; try { evt = JSON.parse(msg.data); } catch { return; }
+        state.eventCount++;
+        switch (evt.type) {
+          case 'session.created':
+          case 'session.updated':
+            log(`[evt] ${evt.type}`);
+            break;
+          case 'conversation.item.input_audio_transcription.delta':
+            if (evt.item_id && typeof evt.delta === 'string') appendMessage(evt.item_id, 'user', evt.delta);
+            break;
+          case 'conversation.item.input_audio_transcription.completed':
+            if (evt.item_id && typeof evt.transcript === 'string') renderMessage(evt.item_id, 'user', evt.transcript);
+            break;
+          case 'response.audio_transcript.delta':
+          case 'response.output_audio_transcript.delta':
+            if (evt.item_id && typeof evt.delta === 'string') appendMessage(evt.item_id, 'assistant', evt.delta);
+            break;
+          case 'response.audio_transcript.done':
+          case 'response.output_audio_transcript.done':
+            if (evt.item_id && typeof evt.transcript === 'string') renderMessage(evt.item_id, 'assistant', evt.transcript);
+            break;
+          case 'response.text.delta':
+          case 'response.output_text.delta':
+            if (evt.item_id && typeof evt.delta === 'string') appendMessage(evt.item_id, 'assistant', evt.delta);
+            break;
+          case 'response.done':
+            log('[evt] response.done');
+            break;
+          case 'error':
+            log(`[evt] ERROR: ${JSON.stringify(evt.error || evt)}`, 'err');
+            break;
+        }
+      }
+
+      // ---- timers (same pattern as RealtimeTab) ----
+      function clearAllTimers() {
+        if (warnTimer)    { clearTimeout(warnTimer);    warnTimer    = null; }
+        if (stopTimer)    { clearTimeout(stopTimer);    stopTimer    = null; }
+        if (sessionTimer) { clearInterval(sessionTimer); sessionTimer = null; }
+        if (statsTimer)   { clearInterval(statsTimer);   statsTimer   = null; }
+      }
+      function armTimers() {
+        if (warnTimer) { clearTimeout(warnTimer); warnTimer = null; }
+        if (stopTimer) { clearTimeout(stopTimer); stopTimer = null; }
+        const now = Date.now();
+        const msToWarn = state.stopDeadline - WARN_LEAD_MS - now;
+        const msToStop = state.stopDeadline - now;
+        if (msToWarn > 0) warnTimer = setTimeout(onWarn, msToWarn); else onWarn();
+        if (msToStop > 0) stopTimer = setTimeout(onStop, msToStop); else onStop();
+      }
+      function onWarn() {
+        if (!state.running) return;
+        playBeep(0.5);
+        const row = $id('chContinueRow'); if (row) row.hidden = false;
+        const left = Math.max(0, Math.floor((state.stopDeadline - Date.now()) / 1000));
+        const lab = $id('chWarnLeft'); if (lab) lab.textContent = String(left);
+        log(`[guard] ⏰ ${left}s до автозупинки — натисни "Продовжити" щоб продовжити`, 'err');
+      }
+      function onStop() {
+        if (!state.running) return;
+        log('[guard] auto-stop at deadline (cost guard)', 'err');
+        hardStop('deadline');
+      }
+      function startSessionTimer() {
+        if (sessionTimer) clearInterval(sessionTimer);
+        const tick = () => {
+          if (!state.running || !state.sessionStartedAt) return;
+          const elapsed = Date.now() - state.sessionStartedAt;
+          const leftToDeadline = Math.max(0, state.stopDeadline - Date.now());
+          const elEl = $id('chElapsed');     if (elEl) elEl.textContent = mmss(elapsed);
+          const dlEl = $id('chDeadlineLeft'); if (dlEl) dlEl.textContent = mmss(leftToDeadline);
+          const row = $id('chContinueRow');
+          if (row && !row.hidden) {
+            const lab = $id('chWarnLeft'); if (lab) lab.textContent = String(Math.ceil(leftToDeadline / 1000));
+          }
+          $id('chSessionBar').hidden = false;
+        };
+        tick();
+        sessionTimer = setInterval(tick, 500);
+      }
+      function startStats() {
+        if (statsTimer) clearInterval(statsTimer);
+        let prevOut = 0, prevIn = 0;
+        statsTimer = setInterval(async () => {
+          if (!state.pc || state.pc.connectionState !== 'connected') return;
+          try {
+            const stats = await state.pc.getStats();
+            let outBytes = 0, inBytes = 0, outPackets = 0, inPackets = 0;
+            stats.forEach(s => {
+              if (s.type === 'outbound-rtp' && s.kind === 'audio') {
+                outBytes = s.bytesSent || 0; outPackets = s.packetsSent || 0;
+              }
+              if (s.type === 'inbound-rtp' && s.kind === 'audio') {
+                inBytes = s.bytesReceived || 0; inPackets = s.packetsReceived || 0;
+              }
+            });
+            const dOut = outBytes - prevOut, dIn = inBytes - prevIn;
+            log(`[stats] mic↑ ${dOut}B (${outPackets}p), audio↓ ${dIn}B (${inPackets}p)`);
+            prevOut = outBytes; prevIn = inBytes;
+          } catch {}
+        }, 3000);
+      }
+
+      function hardStop(reason) {
+        const wasRunning = state.running;
+        state.running = false;
+        clearAllTimers();
+        try { state.dc?.close(); } catch {}
+        try { state.pc?.close(); } catch {}
+        try { state.micStream?.getTracks().forEach(t => t.stop()); } catch {}
+        if (state.audioEl) { try { state.audioEl.pause(); state.audioEl.srcObject = null; } catch {} }
+        const pcState = state.pc?.connectionState ?? 'null';
+        const micState = state.micStream?.getAudioTracks()[0]?.readyState ?? 'null';
+        log(`[guard] hardStop(${reason}): pc=${pcState}, mic=${micState}, events=${state.eventCount}`, wasRunning ? 'ok' : '');
+        state.pc = null; state.dc = null; state.micStream = null;
+        state.sessionStartedAt = 0; state.stopDeadline = 0;
+        $id('chStartBtn')?.classList.remove('live');
+        const sb = $id('chSessionBar'); if (sb) sb.hidden = true;
+        const cr = $id('chContinueRow'); if (cr) cr.hidden = true;
+        const cs = $id('chConnStatus'); if (cs) cs.textContent = 'idle';
+        const ti = $id('chTextInput'); if (ti) ti.disabled = true;
+        const sb2 = $id('chSendBtn'); if (sb2) sb2.disabled = true;
+        hideTelegramStopButton();
+      }
+      function stopIfRunning(reason = 'tab-switch') { if (state.running) hardStop(reason); }
+
+      function playBeep(durationSec) {
+        try {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (!AC) return;
+          const ctx = new AC();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine'; osc.frequency.value = 880;
+          gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + durationSec);
+          osc.connect(gain).connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + durationSec + 0.05);
+          osc.onended = () => { try { ctx.close(); } catch {} };
+        } catch (e) { log(`[beep] failed: ${e.message}`, 'err'); }
+      }
+
+      function showTelegramStopButton() {
+        try {
+          const wa = window.Telegram?.WebApp;
+          if (!wa?.MainButton) return;
+          const mb = wa.MainButton;
+          mb.setText('🔴 STOP'); mb.color = '#E53935'; mb.textColor = '#FFFFFF';
+          if (!mb._chatBound) { mb.onClick(() => hardStop('telegram-mainbutton')); mb._chatBound = true; }
           mb.show();
         } catch {}
       }
