@@ -157,12 +157,43 @@ Each tab has its own structure — they are NOT three views of the same shell. B
 Refactor `ios/TeycanTranslate/Sources/DesignSystem/Components/` to be feature-agnostic and reusable. New components:
 
 - `MicButton.swift` (rewrite) — accept `shape: MicShape { case round, square }`, size, accent color binding, isActive state
-- `LiveIndicator.swift` (NEW) — accent dot + tabular `Live · MM:SS`, infinite blink animation
+- `LiveIndicator.swift` (NEW) — accent dot + tabular `Live · MM:SS`, infinite blink animation. **Must support state machine** per DESIGN.md § Cost Guard System (active normal / warning ≤30s / continue tapped / stopped). Color shift to warning happens automatically when `secondsRemaining <= 30`.
 - `LangPill.swift` (NEW) — eyebrow + value, tap presents language picker sheet, 4pt corner
 - `EyebrowLabel.swift` (NEW) — JetBrains Mono 11pt UPPER 0.18em, optional leading em-dash, optional accent color override
 - `ModelNode.swift` (NEW, used in Bridge) — 28pt circle, accent border, `M` letter, optional pulse on active turn
-- `DeadlineBanner.swift` (existing — restyle) — DESIGN.md § Components > Cost Guard Banner specs
+- `CostGuardBanner.swift` (replaces existing `DeadlineBanner.swift`) — full spec per DESIGN.md § Cost Guard System > Visual spec — Cost Guard Banner. Slide-in 250ms ease-out, slide-out 200ms ease-in, infinite border-color pulse 2s ease-in-out while visible. Localized message text (UA/EN/ES). Continue button triggers `+2:00 from current deadline` (NOT from tap moment — see decisions log).
+- `SessionEndedSheet.swift` (NEW) — full spec per DESIGN.md § Cost Guard System > Visual spec — Session Ended sheet. Native iOS `.sheet` with `.presentationDetents([.height(380)])`. Adaptive copy by reason code (`deadline` / `hidden5s` / `pcFailed` / `manual` / etc). Stats row uses tabular nums. Restart starts new session immediately with no extra confirmation.
 - `LogPanel.swift` (existing — restyle to strict aesthetic, mono font for log entries)
+
+### 4b. Cost Guard wiring (NEW — explicit)
+
+The existing `CostGuard.swift` logic is the single source of truth for state — DO NOT change its internals. Your job is to wire its observable state into the new visual components in Bridge and Companion (Phrase has no cost guard).
+
+State surfaces to wire:
+- `costGuard.secondsRemaining: Int` → drives `LiveIndicator` time text
+- `costGuard.warningActive: Bool` (computed: `secondsRemaining <= 30 && state == .running`) → drives `CostGuardBanner` visibility and `LiveIndicator` color
+- `costGuard.state: GuardState` (`.idle / .running / .ended(reason)`) → drives `SessionEndedSheet` presentation and `Restart` action
+- `costGuard.endReason: String?` (e.g., `"deadline"`, `"hidden5s"`) → drives adaptive copy on the ended sheet
+- `costGuard.usedSeconds: Int` and `costGuard.estimatedCost: Double?` → stats row on ended sheet
+
+Continue button action: call `costGuard.extend(by: 120)` (existing API). The function pushes deadline forward by 120 seconds from current deadline — DO NOT change this behavior.
+
+Settings hook: add Settings → Cost Guard → Session length picker per DESIGN.md § Cost Guard System > Default + power-user override. Selected value persists to `Preferences.defaultSessionLength`. `No limit` is gated behind hold-to-confirm modal AND requires Founder Edition entitlement check.
+
+Localized strings — add to `Localizable.xcstrings` (or per-language plist if not yet localized):
+- `cost_guard.banner.text` — "{0:30} to auto-stop · spending paused at deadline" (and UA / ES variants per DESIGN.md spec)
+- `cost_guard.banner.button` — "Continue +2 min" / "+2 хв" / "+2 min"
+- `cost_guard.ended.title` — "Session ended"
+- `cost_guard.ended.body.deadline` — "Stopped to protect your bill. Tap Restart for another 3 minutes."
+- `cost_guard.ended.body.hidden5s` — "You stepped away. We closed the session to stop the meter."
+- `cost_guard.ended.body.pcfailed` — "Connection dropped. Tap Restart to reconnect."
+- `cost_guard.ended.body.manual` — "Session closed. Tap Restart to begin again."
+- `cost_guard.ended.cta.restart` — "Restart"
+- `cost_guard.ended.cta.done` — "Done"
+
+Visual reference: open `~/.gstack/projects/AlexSerbinov-Telegram_bot_ai_translator/designs/design-system-20260509/04-cost-guard-states.html` in a browser. Six iPhone mockups show all three states for both Bridge and Companion.
+
+Microcopy rule (CRITICAL): `cost_guard.*` strings must read like a calm assistant, never like a paywall. See DESIGN.md § Cost Guard System > Microcopy guidelines for the do/don't matrix. The full localization team must review before App Store submission.
 
 ### 5. Brand mark + onboarding
 

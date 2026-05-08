@@ -272,14 +272,169 @@ Used in Phrase (top), Bridge (top), Companion (target picker).
 
 `JetBrains Mono Medium 11pt UPPERCASE letter-spacing 0.18em`, color `text.muted` or `accent.signature` for emphasis. Always preceded by `— ` (em-dash space) for editorial gravitas.
 
-### Cost Guard Banner
+### Cost Guard Banner (compact reference)
 
-Top of conversation area, only visible in last 30 seconds:
-- 6pt corner radius
-- Border: 1pt warning color
-- Background: warning at 12% alpha
-- Layout: text "0:30 до автозупинки" (left, warning text, tabular nums) + "Continue +2 хв" button (right, warning fill, white text, 4pt corner, 6pt vertical padding)
-- Animation: subtle border-color pulse 2s ease-in-out
+Full spec in § Cost Guard System below. Quick reference:
+- Position: top of conversation area, below header
+- Background: warning at 12% alpha · Border: 1pt warning · Radius: 6pt
+- Pulse on border 2s ease-in-out infinite while visible
+- Slides in from top 250ms ease-out, slides out 200ms ease-in
+
+---
+
+## Cost Guard System
+
+**The single most important UX rule of the app.** Without it, the product loses money on every forgotten session and dies in 6 weeks.
+
+### Why this exists
+
+OpenAI Realtime API (used by Bridge + Companion) bills per minute of audio input AND output. A user who leaves a session open while making coffee, walking the dog, or simply forgetting costs us **$5–$30 per incident**. One forgotten night-time session can wipe an entire month of margin on a $15/mo subscription. Without cost guards we have no business.
+
+The cost guard is therefore not a nag. It is a **product promise**: *"We will protect you from billing surprises by reminding you you're alive every 2:30 minutes. If you're really there, tap one button and continue. If not, we close the session and stop the meter."*
+
+This framing matters — present cost guard as a benefit, never as an obstacle. Microcopy reinforces the promise.
+
+### Which modes have it
+
+| Mode | Cost guard? | Why |
+|---|---|---|
+| **Phrase** | No | One-shot. Session ends naturally after speech-to-translate. No background risk. |
+| **Companion** | **Yes** | OpenAI Realtime, expensive, can run silently in headphones. High forgetting risk. |
+| **Bridge** | **Yes** | OpenAI Realtime, expensive, conversation can be paused mid-flow. High forgetting risk. |
+
+### Core mechanic (default tier)
+
+| Step | What happens | Time on clock |
+|---|---|---|
+| 1 | Session starts. Hidden deadline = `now + 3:00`. Live indicator counts down `Live · 3:00 → 0:00`. | 3:00 |
+| 2 | At deadline minus 30 seconds, warning banner slides in from top of conversation area. Live indicator color shifts from ink to warning. Border on banner pulses subtly. | 0:30 |
+| 3 | User taps **Continue +2 min** → deadline pushed forward by +2:00 **from the current deadline** (not from the tap moment). Banner slides out. Live indicator reverts to ink + accent. | jumps to 2:30 |
+| 4 | If user does nothing → at deadline, hardStop. Conversation transcript fades to 60% opacity. "Session ended" sheet slides up. | 0:00 → ended |
+| 5 | Continue can be tapped repeatedly. Each tap = +2:00 from current deadline. | unlimited extensions while user is engaged |
+
+**Why "Continue from current deadline" not "Continue from tap":** if the user sees the banner at 0:30 and taps immediately, they get a fresh 2:30 of headroom (until the next banner at 0:30). This matches user expectations. If we extended from tap moment, tapping at 0:30 would only give 2:00 — felt like a punishment for being attentive.
+
+### Default + power-user override
+
+- **Default deadline:** 3:00 minutes
+- **Continue extension:** +2:00 minutes
+- **Warning trigger:** 30 seconds before deadline
+
+Power users can override in **Settings → Cost Guard → Session length**: `[1 min · 3 min (default) · 5 min · 10 min · 15 min · No limit]`.
+
+`No limit` is locked behind a confirmation modal:
+> ⚠️ Without auto-stop, a forgotten session can cost up to $30/hour. Hold the button below for 5 seconds to confirm you understand.
+
+(Use a hold-to-confirm pattern with progress fill animation — single tap is too easy to misclick.)
+
+In the Founder Edition validation phase ($15/mo), `No limit` is gated entirely. Reintroduced once cohort retention data validates pricing.
+
+### Seven layers of protection (do not change — exist in `CostGuard.swift`)
+
+| # | Trigger | Reason fired | Log entry |
+|---|---|---|---|
+| 1 | Manual Stop (user taps red Stop) | Explicit user action | `[guard] hardStop(manual)` |
+| 2 | **Deadline reached** | No Continue in last 30s | `[guard] hardStop(deadline)` |
+| 3 | PeerConnection failed/closed | Network drop, OpenAI hiccup | `[guard] hardStop(pcFailed)` |
+| 4 | App backgrounded > 5s | User home-swiped, didn't return | `[guard] hardStop(hidden5s)` |
+| 5 | App terminated | User force-killed app | `[guard] hardStop(terminate)` |
+| 6 | Tab switch | User left Bridge for Phrase mid-session | `[guard] hardStop(tabSwitch)` |
+| 7 | Watchdog every 5s | Resource leak detection | `[guard] watchdog leaked` |
+
+UI surfaces only Layer 2 (deadline banner) and Layer 1 (the always-visible Stop button). Layers 3–7 happen silently — the user just sees the session-ended state with the appropriate reason in DiagLogger.
+
+### Visual spec — Cost Guard Banner
+
+**Position:** Top of conversation area, BELOW the screen header (do not stack above header — header lockup must stay visually undisturbed). 16pt margin from screen edges.
+
+**Container:**
+- Padding: 14pt horizontal, 12pt vertical
+- Background: `semantic.warning` at 12% alpha (light: `#C28A2D` × 12%, dark: `#E0A05F` × 14%)
+- Border: 1pt solid `semantic.warning`
+- Radius: `DS.Radius.md` (6pt)
+- Z-index: above conversation, below modal sheets
+
+**Layout (HStack):**
+1. Message text — flex 1, leading. SF Pro Text 13pt Medium, color: `semantic.warning`. Tabular nums for the time. Format:
+   - English: `0:30 to auto-stop · spending paused at deadline`
+   - Ukrainian: `0:30 до автозупинки · списання припиниться на дедлайні`
+   - Spanish: `0:30 hasta detener · el cobro se pausa en el plazo`
+2. Continue button — 4pt corner, `semantic.warning` fill, white text, SF Pro Text 11pt Semibold UPPERCASE letter-spacing 0.05em, 8pt vertical / 14pt horizontal padding. Label:
+   - EN: `CONTINUE +2 MIN`
+   - UA: `+2 ХВ`
+   - ES: `+2 MIN`
+
+**Animation:**
+- Enter: `.move(edge: .top).combined(with: .opacity)`, `.easeOut(duration: 0.25)`
+- While visible: subtle border-color pulse (warning border opacity 1.0 → 0.6 → 1.0) over 2s ease-in-out, infinite. Only border, not full container — full pulse would be too anxiety-inducing.
+- Exit (Continue tapped or stopped): `.move(edge: .top).combined(with: .opacity)`, `.easeIn(duration: 0.2)`
+
+### Visual spec — Live indicator behavior
+
+The live indicator at top-right of screen header is the always-on cost guard surface. Its appearance depends on session state:
+
+| State | Live dot color | Time text color | Time format |
+|---|---|---|---|
+| Active normal (>30s) | `accent.signature` (forest) | `text.ink` | `Live · 2:47` |
+| Warning (≤30s) | `semantic.warning` | `semantic.warning` | `Live · 0:30` (tabular nums emphasized) |
+| Continue tapped | reverts to accent + ink with 200ms transition | reverts | `Live · 2:30` |
+| Stopped | `text.subtle` (no pulse) | `text.subtle` | `Ended · 4:32 used` |
+
+The state transition between Active → Warning is animated (color transition 200ms). This is the only color animation in the system — used because it is a critical signal.
+
+### Visual spec — Session Ended sheet
+
+When deadline (or any layer 2–7 trigger) hardStops the session:
+
+1. Conversation transcript fades to 60% opacity in 200ms.
+2. Sheet slides up from bottom (native iOS `.sheet` modifier with `.presentationDetents([.height(380)])`).
+3. Sheet content:
+   - Eyebrow: `JETBRAINS MONO 11PT 0.18EM UPPER`, color `text.muted` — `— SESSION ENDED · {REASON_CODE}` (e.g., `· DEADLINE`, `· BACKGROUND`, `· MANUAL`)
+   - Title: SF Pro Display Bold 22pt, ink — "Session ended"
+   - Body: SF Pro Text 14pt regular, muted — adaptive copy:
+     - On `deadline`: *"Stopped to protect your bill. Tap Restart for another 3 minutes."*
+     - On `hidden5s`: *"You stepped away. We closed the session to stop the meter."*
+     - On `pcFailed`: *"Connection dropped. Tap Restart to reconnect."*
+     - On `manual`: *"Session closed. Tap Restart to begin again."*
+   - Stats row (2 columns): mono labels — `USED · {MM:SS}` and `COST · ~${X.XX}` (cost is best-effort estimate, hidden if unknown)
+   - CTA primary: "Restart" — accent fill, full-width 48pt height, `DS.Radius.sm`, SF Pro Text 16pt Semibold white
+   - CTA secondary: "Done" — text-only button below, muted color, dismisses sheet
+
+Swipe-down dismisses sheet. Restart starts a new session immediately (no extra confirmation — Restart is the desired path).
+
+### Microcopy guidelines
+
+The cost guard text is the most-read microcopy in the app. Optimize for **calm authority**:
+
+✅ Do
+- "0:30 to auto-stop · spending paused at deadline"
+- "Stopped to protect your bill"
+- "Tap Restart for another 3 minutes"
+
+❌ Don't
+- "Warning! Session about to expire!" (alarmist)
+- "Click here to continue using" (Web 1.0)
+- "Your time is running out!" (anxiety-inducing)
+- "Limit reached" (sounds like punishment)
+
+The user is doing real work in real-stakes contexts (a doctor visit, a notary appointment). Cost guard copy must read like a calm assistant, never like a paywall.
+
+### Accessibility
+
+- Banner has `accessibilityRole(.alert)` so VoiceOver reads it on appearance.
+- Continue button has `accessibilityLabel("Continue session for 2 more minutes")` (full sentence).
+- Time remaining is announced every 30 seconds in VoiceOver if the banner is visible.
+- Color is not the only signal — text content (`0:30 to auto-stop`) and structure (banner appears) carry the meaning for color-blind users.
+- Hold-to-confirm "No limit" toggle has `accessibilityHint("Hold for 5 seconds to confirm")`.
+
+### Decisions log (cost guard specifically)
+
+- **Default 3:00 deadline, not 2:00 or 5:00.** Most one-question conversations finish in 30–60 seconds. 3:00 is generous headroom that doesn't require Continue for 90% of sessions while still protecting against a 30-minute forgotten session.
+- **Continue extends from current deadline, not tap moment.** Tested both mentally — current deadline gives 2:30 of headroom feeling, tap-moment gives 2:00 with felt punishment for tapping early.
+- **Banner sits below header, not above.** Header has the live indicator (the always-on cost guard signal). Stacking banner above header would create competing focal points.
+- **Warning color, not error red.** This is not an error. The session is working correctly. Warning amber (`#C28A2D`) signals "attention" not "failure".
+- **No haptic on banner appear.** Tested — haptic on every banner is too intrusive for medical/legal contexts where user may be mid-conversation. The visual + tabular-nums color shift is enough.
+- **Haptic on Continue tap (light, 1 pulse).** Tactile confirmation that the tap registered.
 
 ## Brand Mark
 
