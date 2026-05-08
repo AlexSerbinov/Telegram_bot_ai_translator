@@ -238,7 +238,19 @@ Translate ONLY the NEW source segment provided by the user, as a natural continu
             audio: {
               input: {
                 transcription: { model: config.openaiRealtime.transcriptionModel },
-                noise_reduction: null,
+                // near_field cleans up mobile mic noise; null left the API to
+                // do whatever default it uses, which seemed to underperform.
+                noise_reduction: { type: 'near_field' },
+                // Explicit VAD config — Mini App users were reporting sessions
+                // dropping mid-flow after the first turn. Default VAD seems
+                // to commit a turn then not re-arm reliably; this matches the
+                // config that keeps Chat tab stable.
+                turn_detection: {
+                  type: 'server_vad',
+                  threshold: 0.5,
+                  prefix_padding_ms: 300,
+                  silence_duration_ms: 800,
+                },
               },
               output: { language: targetLanguage },
             },
