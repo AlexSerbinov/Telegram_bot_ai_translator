@@ -1,0 +1,46 @@
+{
+  "_meta": {
+    "description": "Expected results per audio fixture. Agent validates real outputs against these. See ../../CLAUDE.md → Audio Testing section.",
+    "schema": {
+      "<fixture-filename>": {
+        "detectedLanguage": "ISO 639-1 code",
+        "transcribed": "What the speaker said, verbatim",
+        "translations": { "<lang-code>": "Expected translation" },
+        "notes": "Optional context (filler words, edge cases, etc.)"
+      }
+    }
+  },
+
+  "hello-uk.wav": {
+    "detectedLanguage": "uk",
+    "transcribed": "Привіт, я живу в Києві, і погода насправді сьогодні супер чудова: сонце світить, але ввечері можливий дощ.",
+    "translations": {
+      "es": "Hola, vivo en Kyiv, y el clima hoy es realmente súper agradable: el sol brilla, pero por la tarde es posible que llueva.",
+      "en": "Hi, I live in Kyiv, and the weather today is actually super nice: the sun is shining, but rain is possible in the evening.",
+      "ru": "Привет, я живу в Киеве, и погода сегодня действительно супер чудесная: солнце светит, но вечером возможен дождь."
+    },
+    "notes": "Medium-length Ukrainian sentence with weather vocabulary. Tests STT accuracy on Cyrillic and short clauses separated by colon."
+  },
+
+  "hello-ru.wav": {
+    "detectedLanguage": "ru",
+    "transcribed": "Привет, этот текст на русском языке. Э-э, я хочу сказать, что я люблю борщ и котлеты. Я люблю украинский борщ.",
+    "translations": {
+      "uk": "Привіт, цей текст російською мовою. Е-е, я хочу сказати, що я люблю борщ і котлети. Я люблю український борщ.",
+      "es": "Hola, este texto está en ruso. Eh, quiero decir que me encantan el borsch y las chuletas. Me encanta el borsch ucraniano.",
+      "en": "Hi, this text is in Russian. Uh, I want to say that I love borscht and cutlets. I love Ukrainian borscht."
+    },
+    "notes": "Russian with filler 'э-э'. STT should preserve the filler or drop it gracefully. Tests detection between two Cyrillic languages (ru vs uk) — easy to confuse."
+  },
+
+  "hello-es.wav": {
+    "detectedLanguage": "es",
+    "transcribed": "Hola, ¿quieres un té o un café con azúcar?",
+    "translations": {
+      "uk": "Привіт, хочеш чай чи каву з цукром?",
+      "en": "Hi, do you want tea or coffee with sugar?",
+      "ru": "Привет, хочешь чай или кофе с сахаром?"
+    },
+    "notes": "Short Spanish question. Tests inverted question mark (¿) preservation and accented characters (té, café, azúcar)."
+  }
+}
