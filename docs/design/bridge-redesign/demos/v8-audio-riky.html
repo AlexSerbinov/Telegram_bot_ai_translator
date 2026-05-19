@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>V8 · Аудіо-ріки</title>
+<style>
+  :root {
+    --bg-canvas: #0A0A0A;
+    --bg-surface: #161616;
+    --bg-surface-2: #1F1F1F;
+    --text-ink: #FAFAFA;
+    --text-muted: #A3A3A3;
+    --text-subtle: #525252;
+    --accent: #3D8A6A;
+    --accent-soft: #1A2E25;
+    --accent-glow: rgba(61, 138, 106, 0.30);
+    --hairline: #262626;
+    --hairline-strong: #404040;
+    --success: #5FA77C;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #050505;
+    color: var(--text-ink);
+    font-family: -apple-system, "SF Pro Display", BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+  }
+  .nav {
+    align-self: stretch;
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .nav a { color: var(--accent); text-decoration: none; }
+  .layout {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    gap: 40px;
+    max-width: 1100px;
+    width: 100%;
+  }
+  .phone {
+    width: 390px;
+    height: 844px;
+    background: var(--bg-canvas);
+    border: 14px solid #1a1a1a;
+    border-radius: 48px;
+    overflow: hidden;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  }
+  .status-bar {
+    height: 47px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 28px;
+    font-family: -apple-system;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .screen {
+    height: calc(100% - 47px);
+    padding: 0 20px 20px;
+    display: flex;
+    flex-direction: column;
+  }
+  .header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+  }
+  .title {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .live-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13px;
+  }
+  .live-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1.6s linear infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.45;} }
+  .eyebrow {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+  }
+
+  /* RIVER */
+  .river {
+    margin-bottom: 12px;
+  }
+  .river-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .river-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+  }
+  .river-label.is-active {
+    color: var(--accent);
+  }
+  .river-label-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--text-subtle);
+    transition: background 0.2s;
+  }
+  .river-label.is-active .river-label-dot {
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent-glow);
+    animation: pulse 1.6s linear infinite;
+  }
+  .river-caption {
+    height: 22px;
+    font-size: 14px;
+    line-height: 22px;
+    color: var(--text-ink);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    direction: rtl;
+    font-style: italic;
+  }
+  .river-caption:not(:empty) {
+    direction: rtl;
+  }
+  .river-caption.is-final {
+    direction: ltr;
+    font-style: normal;
+    color: var(--text-muted);
+  }
+  .river-caption.is-empty {
+    color: var(--text-subtle);
+    font-style: italic;
+    font-size: 12px;
+  }
+  .river-canvas-wrap {
+    position: relative;
+    height: 48px;
+    background: var(--bg-surface);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .river-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .now-cursor {
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--accent);
+    box-shadow: 0 0 4px var(--accent-glow);
+  }
+  .now-label {
+    position: absolute;
+    left: 14px;
+    bottom: 4px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+  }
+  .past-label {
+    position: absolute;
+    right: 8px;
+    bottom: 4px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px;
+    color: var(--text-subtle);
+    letter-spacing: 0.1em;
+  }
+
+  /* M DIVIDER between rivers */
+  .m-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 14px 0;
+    padding: 6px 0;
+  }
+  .m-divider::before,
+  .m-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--hairline);
+  }
+  .m-divider-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    color: var(--text-subtle);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  .m-divider-disk {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--bg-canvas);
+    border: 1.5px solid var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "JetBrains Mono", monospace;
+    font-weight: 600;
+    font-size: 11px;
+    color: var(--accent);
+    transition: box-shadow 0.2s;
+  }
+  .m-divider-disk.is-active {
+    box-shadow: 0 0 0 4px var(--accent-glow);
+  }
+  .m-divider-latency {
+    color: var(--accent);
+  }
+
+  /* HISTORICAL TIMELINE */
+  .history {
+    flex: 1;
+    overflow-y: auto;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--hairline);
+  }
+  .history-header {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    color: var(--text-subtle);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .history-row {
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--hairline);
+    animation: slideIn 0.25s ease-out;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .history-meta {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    color: var(--text-subtle);
+    letter-spacing: 0.1em;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .history-source {
+    font-size: 13px;
+    color: var(--text-ink);
+    margin-bottom: 2px;
+  }
+  .history-target {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding-left: 12px;
+    border-left: 2px solid var(--accent-soft);
+  }
+
+  /* MIC */
+  .mic-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding-top: 12px;
+  }
+  .mic {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px var(--accent-glow), 0 0 0 1px var(--accent);
+    cursor: pointer;
+  }
+  .mic svg { width: 28px; height: 28px; fill: white; }
+  .mic-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    color: var(--text-subtle);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  /* CONTROLS */
+  .controls {
+    background: var(--bg-surface);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    padding: 24px;
+    height: fit-content;
+  }
+  .controls h3 {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 12px;
+  }
+  .controls .sub {
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 20px;
+    margin-bottom: 20px;
+  }
+  .phase-readout {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    background: var(--bg-canvas);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+  }
+  .btn-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .btn {
+    background: var(--bg-canvas);
+    border: 1px solid var(--hairline-strong);
+    color: var(--text-ink);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .btn:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+  .btn-row.full { grid-template-columns: 1fr; }
+  .warning {
+    background: rgba(220, 74, 63, 0.1);
+    border: 1px solid rgba(220, 74, 63, 0.3);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-top: 16px;
+    font-size: 12px;
+    line-height: 18px;
+    color: #DC4A3F;
+  }
+  .warning strong {
+    color: #DC4A3F;
+  }
+  .legend {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--hairline);
+  }
+  .legend h4 {
+    font-size: 11px;
+    font-family: "JetBrains Mono", monospace;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+    margin-bottom: 12px;
+  }
+  .legend-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 18px;
+  }
+  .legend-tag {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: var(--bg-canvas);
+    color: var(--accent);
+    min-width: 80px;
+    text-align: center;
+    letter-spacing: 0.1em;
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+  <div class="nav">
+    <span>V8 · Аудіо-ріки</span>
+    <a href="./index.html">← back to demos</a>
+  </div>
+
+  <div class="layout">
+    <div class="phone">
+      <div class="status-bar">
+        <span>10:25</span>
+        <span>90</span>
+      </div>
+      <div class="screen">
+        <div class="header-row">
+          <div class="title">Bridge</div>
+          <div class="live-indicator"><span class="live-dot"></span><span>Live · 2:47</span></div>
+        </div>
+        <div class="eyebrow">TWO-WAY · UK ↔ ES · STREAM MODE</div>
+
+        <!-- SOURCE RIVER (UA) -->
+        <div class="river">
+          <div class="river-header">
+            <div class="river-label" id="src-label">
+              <span class="river-label-dot"></span>
+              <span id="src-label-text">🇺🇦 SOURCE — idle</span>
+            </div>
+          </div>
+          <div class="river-caption is-empty" id="src-caption">listening for audio…</div>
+          <div class="river-canvas-wrap">
+            <canvas class="river-canvas" id="src-canvas" width="700" height="96"></canvas>
+            <div class="now-cursor"></div>
+            <div class="now-label">NOW</div>
+            <div class="past-label">← PAST 30s</div>
+          </div>
+        </div>
+
+        <!-- M DIVIDER -->
+        <div class="m-divider">
+          <div class="m-divider-content">
+            <span>M · gpt-realtime</span>
+            <div class="m-divider-disk" id="m-disk">M</div>
+            <span class="m-divider-latency" id="m-latency">ready</span>
+          </div>
+        </div>
+
+        <!-- TARGET RIVER (ES) -->
+        <div class="river">
+          <div class="river-header">
+            <div class="river-label" id="tgt-label">
+              <span class="river-label-dot"></span>
+              <span id="tgt-label-text">🇪🇸 TARGET — idle</span>
+            </div>
+          </div>
+          <div class="river-caption is-empty" id="tgt-caption">awaiting translation…</div>
+          <div class="river-canvas-wrap">
+            <canvas class="river-canvas" id="tgt-canvas" width="700" height="96"></canvas>
+            <div class="now-cursor"></div>
+            <div class="now-label">NOW</div>
+            <div class="past-label">← PAST 30s</div>
+          </div>
+        </div>
+
+        <!-- HISTORICAL TIMELINE -->
+        <div class="history" id="history-wrap">
+          <div class="history-header">Historical Timeline</div>
+          <div id="history"></div>
+        </div>
+
+        <div class="mic-area">
+          <div class="mic">
+            <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+          </div>
+          <div class="mic-label">Stream · Auto-detect</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <h3>Audio Rivers Controls</h3>
+      <p class="sub">Two real-time waveform streams that scroll left-to-right. Target stream lags ~0.4s behind source (visible latency). Captions roll with the cursor.</p>
+      <div class="phase-readout" id="phase-readout">phase: idle</div>
+
+      <div class="btn-row">
+        <button class="btn" data-step="ua-start">UA speech_started</button>
+        <button class="btn" data-step="ua-stop">UA speech_stopped</button>
+        <button class="btn" data-step="m-translate">M response start</button>
+        <button class="btn" data-step="es-play">M audio.started</button>
+        <button class="btn" data-step="done">response.done</button>
+        <button class="btn" data-step="reset">Reset</button>
+      </div>
+      <div class="btn-row full">
+        <button class="btn primary" id="auto-btn">▶ Auto-play full cycle</button>
+      </div>
+
+      <div class="warning">
+        <strong>Feasibility note:</strong> The source-side waveform uses real RMS from <code>PCMStreamRecorder</code> (already in iOS code). The target waveform in this demo is <em>synthetic</em> — WebRTC doesn't expose model's output PCM. In production we'd either approximate from <code>outputTranscriptDelta</code> rate or invest 1–2 weeks in WebRTC PCM tap R&D.
+      </div>
+
+      <div class="legend">
+        <h4>What you see</h4>
+        <div class="legend-row"><span class="legend-tag">scroll</span>Both rivers scroll right-to-left at ~1pt per frame (60fps)</div>
+        <div class="legend-row"><span class="legend-tag">lag</span>Target river starts producing audio ~0.4s after source stops (latency visible)</div>
+        <div class="legend-row"><span class="legend-tag">caption</span>Rolling text aligned with current playhead, RTL truncation so newest words always visible</div>
+        <div class="legend-row"><span class="legend-tag">history</span>Each completed turn appears below in compact form</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const srcCanvas = document.getElementById('src-canvas');
+const tgtCanvas = document.getElementById('tgt-canvas');
+const srcCtx = srcCanvas.getContext('2d');
+const tgtCtx = tgtCanvas.getContext('2d');
+const srcLabel = document.getElementById('src-label');
+const tgtLabel = document.getElementById('tgt-label');
+const srcLabelText = document.getElementById('src-label-text');
+const tgtLabelText = document.getElementById('tgt-label-text');
+const srcCaption = document.getElementById('src-caption');
+const tgtCaption = document.getElementById('tgt-caption');
+const mDisk = document.getElementById('m-disk');
+const mLatency = document.getElementById('m-latency');
+const phaseReadout = document.getElementById('phase-readout');
+const history = document.getElementById('history');
+
+const TURNS = [
+  {
+    src: 'ua', srcFlag: '🇺🇦', srcCode: 'UA',
+    srcText: 'Привіт, як справи сьогодні?',
+    tgt: 'es', tgtFlag: '🇪🇸', tgtCode: 'ES',
+    tgtText: 'Hola, ¿cómo estás hoy?',
+    timestamp: '02:47', latency: '0.8s',
+  },
+  {
+    src: 'es', srcFlag: '🇪🇸', srcCode: 'ES',
+    srcText: 'Bien, gracias. ¿Y tú?',
+    tgt: 'ua', tgtFlag: '🇺🇦', tgtCode: 'UA',
+    tgtText: 'Добре, дякую. А ти?',
+    timestamp: '02:53', latency: '0.6s',
+  },
+  {
+    src: 'ua', srcFlag: '🇺🇦', srcCode: 'UA',
+    srcText: 'Я хотів запитати про лікаря — чи можна записатися на прийом?',
+    tgt: 'es', tgtFlag: '🇪🇸', tgtCode: 'ES',
+    tgtText: 'Quería preguntar sobre el médico — ¿se puede agendar una cita?',
+    timestamp: '03:01', latency: '0.7s',
+  },
+];
+
+let idx = 0;
+let autoTimer = null;
+
+// Ring buffers — array of recent RMS values (oldest at end, newest at index 0)
+const BUFFER_SIZE = 320;  // ~30s at 96px height
+const srcBuffer = new Array(BUFFER_SIZE).fill(0);
+const tgtBuffer = new Array(BUFFER_SIZE).fill(0);
+
+// Active state
+let srcActive = false;
+let tgtActive = false;
+let srcText = '';
+let tgtText = '';
+let srcCharsRevealed = 0;
+let tgtCharsRevealed = 0;
+
+// Render loop
+function render() {
+  // Scroll buffers: shift right, prepend new value
+  if (srcActive) {
+    const rms = 0.3 + Math.random() * 0.5 + Math.sin(Date.now() / 100) * 0.15;
+    srcBuffer.unshift(Math.max(0.05, Math.min(0.95, rms)));
+  } else {
+    srcBuffer.unshift(0.02 + Math.random() * 0.02);  // near-silence
+  }
+  srcBuffer.pop();
+
+  if (tgtActive) {
+    const rms = 0.25 + Math.random() * 0.45 + Math.cos(Date.now() / 110) * 0.15;
+    tgtBuffer.unshift(Math.max(0.05, Math.min(0.95, rms)));
+  } else {
+    tgtBuffer.unshift(0.02 + Math.random() * 0.02);
+  }
+  tgtBuffer.pop();
+
+  // Reveal captions incrementally
+  if (srcActive && srcText && srcCharsRevealed < srcText.length) {
+    srcCharsRevealed += 0.8;  // ~12 chars/sec at 60fps
+    srcCaption.textContent = srcText.slice(0, Math.floor(srcCharsRevealed));
+    srcCaption.classList.remove('is-empty');
+  }
+  if (tgtActive && tgtText && tgtCharsRevealed < tgtText.length) {
+    tgtCharsRevealed += 0.7;
+    tgtCaption.textContent = tgtText.slice(0, Math.floor(tgtCharsRevealed));
+    tgtCaption.classList.remove('is-empty');
+  }
+
+  drawRiver(srcCtx, srcCanvas, srcBuffer, srcActive ? 'rgba(61, 138, 106, 0.8)' : 'rgba(82, 82, 82, 0.5)');
+  drawRiver(tgtCtx, tgtCanvas, tgtBuffer, tgtActive ? 'rgba(61, 138, 106, 0.8)' : 'rgba(82, 82, 82, 0.5)');
+
+  requestAnimationFrame(render);
+}
+
+function drawRiver(ctx, canvas, buffer, color) {
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = color;
+  const barW = w / BUFFER_SIZE;
+  for (let i = 0; i < BUFFER_SIZE; i++) {
+    const v = buffer[i];
+    const bh = v * h * 0.8;
+    const x = i * barW;
+    ctx.fillRect(x, (h - bh) / 2, Math.max(1, barW - 0.5), bh);
+  }
+}
+
+requestAnimationFrame(render);
+
+// Step logic
+function setPhase(p) {
+  phaseReadout.textContent = `phase: ${p}`;
+}
+
+function setSrcLabel(flag, code, state, active) {
+  srcLabel.classList.toggle('is-active', active);
+  srcLabelText.textContent = `${flag} SOURCE — ${state}`;
+}
+function setTgtLabel(flag, code, state, active) {
+  tgtLabel.classList.toggle('is-active', active);
+  tgtLabelText.textContent = `${flag} TARGET — ${state}`;
+}
+
+function clearSrcCaption() {
+  srcText = ''; srcCharsRevealed = 0;
+  srcCaption.textContent = 'listening for audio…';
+  srcCaption.classList.add('is-empty');
+  srcCaption.classList.remove('is-final');
+}
+function clearTgtCaption() {
+  tgtText = ''; tgtCharsRevealed = 0;
+  tgtCaption.textContent = 'awaiting translation…';
+  tgtCaption.classList.add('is-empty');
+  tgtCaption.classList.remove('is-final');
+}
+
+function pushHistory(turn) {
+  const row = document.createElement('div');
+  row.className = 'history-row';
+  row.innerHTML = `
+    <div class="history-meta">
+      <span>${turn.timestamp} · ${turn.srcFlag} ${turn.srcCode} → ${turn.tgtFlag} ${turn.tgtCode}</span>
+      <span>${turn.latency}</span>
+    </div>
+    <div class="history-source">${turn.srcText}</div>
+    <div class="history-target">${turn.tgtText}</div>
+  `;
+  history.appendChild(row);
+  history.parentElement.scrollTop = history.parentElement.scrollHeight;
+}
+
+function step(name) {
+  const turn = TURNS[idx % TURNS.length];
+  switch (name) {
+    case 'ua-start': {
+      srcActive = true;
+      tgtActive = false;
+      setSrcLabel(turn.srcFlag, turn.srcCode, 'speaking', true);
+      setTgtLabel(turn.tgtFlag, turn.tgtCode, 'idle', false);
+      srcText = turn.srcText;
+      srcCharsRevealed = 0;
+      mLatency.textContent = 'capturing…';
+      mDisk.classList.remove('is-active');
+      setPhase(`source_streaming (${turn.src})`);
+      break;
+    }
+    case 'ua-stop': {
+      srcActive = false;
+      setSrcLabel(turn.srcFlag, turn.srcCode, 'done', false);
+      srcCaption.classList.add('is-final');
+      srcCaption.textContent = turn.srcText;
+      mLatency.textContent = 'processing';
+      mDisk.classList.add('is-active');
+      setPhase('source_finished');
+      break;
+    }
+    case 'm-translate': {
+      mLatency.textContent = 'translating…';
+      mDisk.classList.add('is-active');
+      setPhase('translating');
+      break;
+    }
+    case 'es-play': {
+      tgtActive = true;
+      setTgtLabel(turn.tgtFlag, turn.tgtCode, 'speaking', true);
+      tgtText = turn.tgtText;
+      tgtCharsRevealed = 0;
+      mLatency.textContent = `0.4s · live`;
+      setPhase(`target_streaming (${turn.tgt})`);
+      break;
+    }
+    case 'done': {
+      tgtActive = false;
+      setSrcLabel(turn.srcFlag, turn.srcCode, 'idle', false);
+      setTgtLabel(turn.tgtFlag, turn.tgtCode, 'done', false);
+      tgtCaption.classList.add('is-final');
+      tgtCaption.textContent = turn.tgtText;
+      mDisk.classList.remove('is-active');
+      mLatency.textContent = `${turn.latency} · done`;
+      pushHistory(turn);
+      idx++;
+      // After 1s, clear captions, reset M status
+      setTimeout(() => {
+        clearSrcCaption();
+        clearTgtCaption();
+        setSrcLabel('🌐', '', 'idle', false);
+        setTgtLabel('🌐', '', 'idle', false);
+        mLatency.textContent = 'ready';
+        setPhase('idle');
+      }, 1200);
+      break;
+    }
+    case 'reset': {
+      idx = 0;
+      history.innerHTML = '';
+      srcActive = false; tgtActive = false;
+      clearSrcCaption(); clearTgtCaption();
+      setSrcLabel('🌐', '', 'idle', false);
+      setTgtLabel('🌐', '', 'idle', false);
+      mDisk.classList.remove('is-active');
+      mLatency.textContent = 'ready';
+      setPhase('idle');
+      stopAuto();
+      break;
+    }
+  }
+}
+
+document.querySelectorAll('.btn[data-step]').forEach(btn => {
+  btn.addEventListener('click', () => step(btn.dataset.step));
+});
+
+function autoCycle() {
+  const seq = ['ua-start', 'ua-stop', 'm-translate', 'es-play', 'done'];
+  const delays = [2400, 1800, 1200, 2200, 2000];
+  let i = 0;
+  function next() {
+    if (!autoTimer) return;
+    step(seq[i % seq.length]);
+    i++;
+    autoTimer = setTimeout(next, delays[(i - 1) % delays.length]);
+  }
+  next();
+}
+function startAuto() {
+  if (autoTimer) return;
+  document.getElementById('auto-btn').textContent = '■ Stop';
+  autoTimer = true;
+  autoCycle();
+}
+function stopAuto() {
+  if (!autoTimer) return;
+  if (typeof autoTimer !== 'boolean') clearTimeout(autoTimer);
+  autoTimer = null;
+  document.getElementById('auto-btn').textContent = '▶ Auto-play full cycle';
+}
+document.getElementById('auto-btn').addEventListener('click', () => {
+  if (autoTimer) stopAuto(); else startAuto();
+});
+</script>
+</body>
+</html>

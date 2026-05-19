@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>V5 · Жива тріада</title>
+<style>
+  :root {
+    --bg-canvas: #0A0A0A;
+    --bg-surface: #161616;
+    --bg-surface-2: #1F1F1F;
+    --text-ink: #FAFAFA;
+    --text-muted: #A3A3A3;
+    --text-subtle: #525252;
+    --accent: #3D8A6A;
+    --accent-soft: #1A2E25;
+    --accent-glow: rgba(61, 138, 106, 0.30);
+    --hairline: #262626;
+    --hairline-strong: #404040;
+    --success: #5FA77C;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #050505;
+    color: var(--text-ink);
+    font-family: -apple-system, "SF Pro Display", BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+  }
+  .nav {
+    align-self: stretch;
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .nav a { color: var(--accent); text-decoration: none; }
+  .nav a:hover { text-decoration: underline; }
+  .layout {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    gap: 40px;
+    max-width: 1100px;
+    width: 100%;
+  }
+  /* Phone frame */
+  .phone {
+    width: 390px;
+    height: 844px;
+    background: var(--bg-canvas);
+    border: 14px solid #1a1a1a;
+    border-radius: 48px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  }
+  .status-bar {
+    height: 47px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 28px;
+    font-family: -apple-system;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .screen {
+    height: calc(100% - 47px);
+    overflow-y: auto;
+    padding: 0 20px 20px;
+    display: flex;
+    flex-direction: column;
+  }
+  .scroll-area {
+    flex: 1;
+    overflow-y: auto;
+  }
+  .header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 12px;
+  }
+  .title {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .live-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13px;
+    color: var(--text-ink);
+  }
+  .live-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1.6s linear infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+  .eyebrow {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 24px;
+  }
+  /* TRIADIC CAST ROW */
+  .triad {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 8px;
+    margin-bottom: 12px;
+  }
+  .actor {
+    flex: 1;
+    background: var(--bg-surface);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 12px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-height: 76px;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+  }
+  .actor.is-active {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .actor-eyebrow {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+  }
+  .actor-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .actor-label .flag { font-size: 20px; }
+  .actor-state {
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    color: var(--text-subtle);
+    letter-spacing: 0.1em;
+  }
+  /* Language picker */
+  .actor.is-ua, .actor.is-es { cursor: pointer; }
+  .chevron {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px;
+    color: var(--text-subtle);
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+  .lang-picker {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-surface-2);
+    border: 1px solid var(--hairline-strong);
+    border-radius: 6px;
+    padding: 4px;
+    z-index: 100;
+    min-width: 130px;
+    max-height: 240px;
+    overflow-y: auto;
+    display: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+  .lang-picker.is-open { display: block; }
+  .lang-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--text-ink);
+    white-space: nowrap;
+  }
+  .lang-picker-item:hover { background: var(--accent-soft); }
+  .lang-picker-item.selected {
+    color: var(--accent);
+    background: rgba(61, 138, 106, 0.08);
+  }
+  .lang-picker-item .picker-flag { font-size: 16px; }
+  .lang-picker-item .picker-code {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+  }
+  /* M node — central actor */
+  .actor.is-model {
+    flex: 0 0 auto;
+    min-width: 76px;
+    background: var(--bg-surface);
+  }
+  .actor.is-model .actor-label {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--bg-canvas);
+    border: 1.5px solid var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "JetBrains Mono", monospace;
+    font-weight: 600;
+    color: var(--accent);
+    position: relative;
+  }
+  .actor.is-model.is-thinking .actor-label::after {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    border: 1.5px solid var(--accent);
+    border-top-color: transparent;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  /* Waveform indicator */
+  .waveform {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 14px;
+  }
+  .waveform span {
+    display: block;
+    width: 2px;
+    background: var(--accent);
+    border-radius: 1px;
+    animation: wave 0.9s ease-in-out infinite;
+  }
+  .waveform span:nth-child(1) { animation-delay: 0.0s; height: 6px; }
+  .waveform span:nth-child(2) { animation-delay: 0.1s; height: 10px; }
+  .waveform span:nth-child(3) { animation-delay: 0.2s; height: 14px; }
+  .waveform span:nth-child(4) { animation-delay: 0.3s; height: 10px; }
+  .waveform span:nth-child(5) { animation-delay: 0.1s; height: 6px; }
+  @keyframes wave {
+    0%, 100% { transform: scaleY(0.6); }
+    50% { transform: scaleY(1); }
+  }
+  /* Speaker icon (target playing) */
+  .speaker-out {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--accent);
+    font-size: 11px;
+  }
+  /* Check mark */
+  .checkmark {
+    color: var(--success);
+    font-weight: 700;
+    font-family: "JetBrains Mono", monospace;
+  }
+  /* LIVE CAPTION */
+  .live-caption {
+    min-height: 64px;
+    margin: 12px 0;
+    padding: 16px 12px;
+    background: rgba(61, 138, 106, 0.06);
+    border-radius: 6px;
+    border-left: 2px solid var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    transition: opacity 0.2s;
+  }
+  .live-caption-text {
+    font-size: 16px;
+    line-height: 22px;
+    font-weight: 500;
+    color: var(--text-ink);
+  }
+  .live-caption-text.partial {
+    font-style: italic;
+    opacity: 0.7;
+  }
+  .live-caption.is-empty {
+    opacity: 0.4;
+  }
+  .live-caption.is-empty .live-caption-text {
+    color: var(--text-subtle);
+    font-style: italic;
+    font-size: 13px;
+  }
+  /* Archive */
+  .archive-divider {
+    margin: 16px 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .archive-divider::before,
+  .archive-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--hairline);
+  }
+  .archive-divider span {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    color: var(--text-subtle);
+  }
+  .turn-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    animation: slideIn 0.3s ease-out;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .turn-card.right { margin-left: 40px; }
+  .turn-card.left { margin-right: 40px; }
+  .provenance {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .provenance .timestamp {
+    color: var(--text-subtle);
+  }
+  .turn-source {
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+  .turn-divider {
+    height: 1px;
+    background: var(--hairline);
+    margin: 8px 0;
+  }
+  .turn-target {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  /* Mic button */
+  .mic-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 16px 0 8px;
+  }
+  .mic {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px var(--accent-glow), 0 0 0 1px var(--accent);
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+  .mic:active { transform: scale(0.96); }
+  .mic svg { width: 28px; height: 28px; fill: white; }
+  .mic-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    color: var(--text-subtle);
+    text-transform: uppercase;
+  }
+  /* DEMO CONTROLS PANEL */
+  .controls {
+    background: var(--bg-surface);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    padding: 24px;
+    height: fit-content;
+  }
+  .controls h3 {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 12px;
+  }
+  .controls .sub {
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 20px;
+    margin-bottom: 20px;
+  }
+  .phase-readout {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    background: var(--bg-canvas);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+  }
+  .btn-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .btn {
+    background: var(--bg-canvas);
+    border: 1px solid var(--hairline-strong);
+    color: var(--text-ink);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .btn:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+  .btn.primary:hover {
+    filter: brightness(1.1);
+  }
+  .btn-row.full { grid-template-columns: 1fr; }
+  .legend {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--hairline);
+  }
+  .legend h4 {
+    font-size: 11px;
+    font-family: "JetBrains Mono", monospace;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+    margin-bottom: 12px;
+  }
+  .legend-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .legend-tag {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: var(--bg-canvas);
+    color: var(--accent);
+    min-width: 70px;
+    text-align: center;
+    letter-spacing: 0.1em;
+  }
+
+  /* ============ STRONGER ACTOR CTA ============ */
+  .actor.is-ua, .actor.is-es {
+    border-color: var(--hairline-strong);
+  }
+  .actor.is-ua::after,
+  .actor.is-es::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; left: 12px; right: 12px;
+    height: 1px;
+    background: var(--accent);
+    opacity: 0.4;
+    transition: opacity 0.2s;
+  }
+  .actor.is-ua:hover::after,
+  .actor.is-es:hover::after { opacity: 1; }
+  .actor .flag { cursor: pointer; transition: transform 0.15s; }
+  .actor .flag:hover { transform: scale(1.1); }
+  .chevron { color: var(--accent) !important; }
+
+  /* ============ COPY BUTTON on cards ============ */
+  .turn-target { position: relative; padding-right: 32px; }
+  .copy-btn {
+    position: absolute;
+    top: 0px; right: 0px;
+    background: transparent;
+    border: 1px solid var(--hairline);
+    color: var(--text-subtle);
+    width: 22px; height: 22px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 11px;
+  }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .copy-btn.is-copied { border-color: var(--success); color: var(--success); }
+
+  /* ============ LOGS TOOLBOX ============ */
+  .logs {
+    background: var(--bg-surface);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    margin-top: 8px;
+    margin-bottom: 6px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .logs-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    cursor: pointer;
+    background: var(--bg-surface-2);
+  }
+  .logs-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .logs-title .caret { color: var(--text-subtle); }
+  .logs-count { color: var(--accent); }
+  .logs-actions { display: flex; gap: 4px; }
+  .logs-action-btn {
+    background: transparent;
+    border: 1px solid var(--hairline);
+    color: var(--text-subtle);
+    padding: 3px 7px;
+    border-radius: 3px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 8px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .logs-action-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .logs-action-btn.is-copied { border-color: var(--success); color: var(--success); }
+  .logs-body {
+    max-height: 0;
+    overflow-y: auto;
+    padding: 0;
+    transition: max-height 0.25s ease, padding 0.25s ease;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px;
+    line-height: 14px;
+    color: var(--text-muted);
+  }
+  .logs.is-open .logs-body { max-height: 110px; padding: 6px 10px; }
+  .logs-entry { display: flex; gap: 6px; padding: 1px 0; }
+  .logs-entry .ts { color: var(--text-subtle); flex-shrink: 0; }
+  .logs-entry .tag { color: var(--accent); flex-shrink: 0; }
+  .logs-empty { color: var(--text-subtle); font-style: italic; padding: 4px 0; }
+
+  /* ============ TAB BAR ============ */
+  .tab-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    background: var(--bg-surface);
+    border: 1px solid var(--hairline);
+    border-radius: 28px;
+    padding: 6px;
+    margin-top: 8px;
+    flex-shrink: 0;
+  }
+  .tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 8px;
+    border-radius: 22px;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.15s;
+  }
+  .tab:hover { background: var(--bg-surface-2); }
+  .tab.is-active { background: var(--bg-surface-2); }
+  .tab-icon {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 18px;
+    line-height: 1;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .tab.is-active .tab-icon { color: var(--accent); }
+  .tab-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .tab.is-active .tab-label { color: var(--accent); }
+  .tab.is-active::before {
+    content: '';
+    position: absolute;
+    top: 2px; left: 30%; right: 30%;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 1px;
+  }
+
+  .mic-area { padding: 6px 0 0; }
+</style>
+</head>
+<body>
+  <div class="nav">
+    <span>V5 · Жива тріада</span>
+    <a href="./index.html">← back to demos</a>
+  </div>
+
+  <div class="layout">
+    <!-- PHONE -->
+    <div class="phone">
+      <div class="status-bar">
+        <span>10:25</span>
+        <span>90</span>
+      </div>
+      <div class="screen">
+        <div class="header-row">
+          <div class="title">Bridge</div>
+          <div class="live-indicator">
+            <span class="live-dot"></span>
+            <span>Live · 2:47</span>
+          </div>
+        </div>
+        <div class="eyebrow">— TWO-WAY · UK ↔ ES · MEDIATOR</div>
+
+        <!-- TRIADIC CAST ROW -->
+        <div class="triad">
+          <div class="actor is-ua" id="actor-ua" data-side="ua">
+            <div class="actor-eyebrow">Side A</div>
+            <div class="actor-label">
+              <span class="flag" id="flag-ua">🇺🇦</span>
+              <span id="code-ua">UK</span>
+              <span class="chevron">▾</span>
+            </div>
+            <div class="actor-state" id="state-ua">idle</div>
+            <div class="lang-picker" id="picker-ua"></div>
+          </div>
+          <div class="actor is-model" id="actor-m">
+            <div class="actor-eyebrow">Model</div>
+            <div class="actor-label">M</div>
+            <div class="actor-state" id="state-m">ready</div>
+          </div>
+          <div class="actor is-es" id="actor-es" data-side="es">
+            <div class="actor-eyebrow">Side B</div>
+            <div class="actor-label">
+              <span class="flag" id="flag-es">🇪🇸</span>
+              <span id="code-es">ES</span>
+              <span class="chevron">▾</span>
+            </div>
+            <div class="actor-state" id="state-es">idle</div>
+            <div class="lang-picker" id="picker-es"></div>
+          </div>
+        </div>
+
+        <!-- LIVE CAPTION -->
+        <div class="live-caption is-empty" id="caption">
+          <div class="live-caption-text" id="caption-text">Tap mic — будь-хто може заговорити</div>
+        </div>
+
+        <!-- ARCHIVE -->
+        <div class="archive-divider"><span>Архів</span></div>
+        <div class="scroll-area" id="archive">
+          <!-- Turns injected via JS -->
+        </div>
+
+        <!-- LOGS TOOLBOX -->
+        <div class="logs" id="logs">
+          <div class="logs-header" id="logs-header">
+            <div class="logs-title">
+              <span class="caret" id="logs-caret">▸</span>
+              <span>DIAG LOG · <span class="logs-count" id="logs-count">0</span></span>
+            </div>
+            <div class="logs-actions">
+              <button class="logs-action-btn" id="logs-copy-btn">⎘ Copy</button>
+              <button class="logs-action-btn" id="logs-clear-btn">✕ Clear</button>
+            </div>
+          </div>
+          <div class="logs-body" id="logs-body">
+            <div class="logs-empty">No events yet. Trigger a step to populate.</div>
+          </div>
+        </div>
+
+        <!-- MIC -->
+        <div class="mic-area">
+          <div class="mic">
+            <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+          </div>
+          <div class="mic-label">Speaking · Auto-detect</div>
+        </div>
+
+        <!-- TAB BAR -->
+        <div class="tab-bar">
+          <div class="tab"><div class="tab-icon">═</div><div class="tab-label">Phrase</div></div>
+          <div class="tab"><div class="tab-icon">≋</div><div class="tab-label">Companion</div></div>
+          <div class="tab is-active"><div class="tab-icon">⇆</div><div class="tab-label">Bridge</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONTROLS -->
+    <div class="controls">
+      <h3>Demo Controls</h3>
+      <p class="sub">Step through a full Bridge cycle, or watch it auto-play. Each step maps 1:1 to a gpt-realtime event that today's code emits.</p>
+      <div class="phase-readout" id="phase-readout">phase: idle</div>
+
+      <div class="btn-row">
+        <button class="btn" data-step="ua-start">UA speech_started</button>
+        <button class="btn" data-step="ua-stop">UA speech_stopped</button>
+        <button class="btn" data-step="m-translate">M response start</button>
+        <button class="btn" data-step="es-play">M audio.started</button>
+        <button class="btn" data-step="done-ua-es">response.done</button>
+        <button class="btn" data-step="reset">Reset</button>
+      </div>
+      <div class="btn-row full">
+        <button class="btn primary" id="auto-btn">▶ Auto-play full cycle</button>
+      </div>
+
+      <div class="legend">
+        <h4>States legend</h4>
+        <div class="legend-row"><span class="legend-tag">idle</span>Actor not active</div>
+        <div class="legend-row"><span class="legend-tag">listening</span>VAD detected speech, partial transcript streaming</div>
+        <div class="legend-row"><span class="legend-tag">finished ✓</span>VAD silence detected, awaiting translation</div>
+        <div class="legend-row"><span class="legend-tag">thinking</span>M generating audio (orbital spinner)</div>
+        <div class="legend-row"><span class="legend-tag">🔊 playing</span>output_audio_buffer.started fired</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const ACTORS = {
+  ua: document.getElementById('actor-ua'),
+  m:  document.getElementById('actor-m'),
+  es: document.getElementById('actor-es'),
+};
+const STATES = {
+  ua: document.getElementById('state-ua'),
+  m:  document.getElementById('state-m'),
+  es: document.getElementById('state-es'),
+};
+const caption = document.getElementById('caption');
+const captionText = document.getElementById('caption-text');
+const phaseReadout = document.getElementById('phase-readout');
+const archive = document.getElementById('archive');
+
+// Mock conversation (alternating turns)
+const TURNS = [
+  {
+    sourceLang: 'ua', flag: '🇺🇦', code: 'UA',
+    sourceText: 'Привіт, як справи сьогодні?',
+    partialText: 'Привіт, як справи сьогод..',
+    targetLang: 'es', targetFlag: '🇪🇸', targetCode: 'ES',
+    targetText: 'Hola, ¿cómo estás hoy?',
+    targetPartial: 'Hola, ¿cómo estás..',
+    timestamp: '02:47', latency: '0.8s',
+  },
+  {
+    sourceLang: 'es', flag: '🇪🇸', code: 'ES',
+    sourceText: 'Bien, gracias. ¿Y tú?',
+    partialText: 'Bien, gracias. ¿Y..',
+    targetLang: 'ua', targetFlag: '🇺🇦', targetCode: 'UA',
+    targetText: 'Добре, дякую. А ти?',
+    targetPartial: 'Добре, дякую..',
+    timestamp: '02:53', latency: '0.6s',
+  },
+  {
+    sourceLang: 'ua', flag: '🇺🇦', code: 'UA',
+    sourceText: 'Я хотів запитати про лікаря.',
+    partialText: 'Я хотів запитати про лік..',
+    targetLang: 'es', targetFlag: '🇪🇸', targetCode: 'ES',
+    targetText: 'Quería preguntar sobre el médico.',
+    targetPartial: 'Quería preguntar..',
+    timestamp: '03:01', latency: '0.7s',
+  },
+];
+
+let currentTurnIdx = 0;
+let currentPhase = 'idle';
+let autoTimer = null;
+
+function setActorState(actorKey, stateName, html) {
+  const actor = ACTORS[actorKey];
+  const state = STATES[actorKey];
+  actor.classList.remove('is-active', 'is-finished', 'is-thinking', 'is-playing');
+  if (stateName === 'listening') {
+    actor.classList.add('is-active');
+    state.innerHTML = '<span class="waveform"><span></span><span></span><span></span><span></span><span></span></span>';
+  } else if (stateName === 'finished') {
+    actor.classList.add('is-finished');
+    state.innerHTML = '<span class="checkmark">✓ done</span>';
+  } else if (stateName === 'thinking') {
+    actor.classList.add('is-thinking', 'is-active');
+    state.textContent = '···';
+  } else if (stateName === 'playing') {
+    actor.classList.add('is-playing', 'is-active');
+    state.innerHTML = '<span class="speaker-out">🔊 <span class="waveform"><span></span><span></span><span></span><span></span><span></span></span></span>';
+  } else if (stateName === 'idle') {
+    state.textContent = 'idle';
+  } else if (stateName === 'ready') {
+    state.textContent = 'ready';
+  } else {
+    state.textContent = stateName;
+  }
+}
+
+function setCaption(text, isPartial) {
+  caption.classList.remove('is-empty');
+  captionText.textContent = text;
+  captionText.classList.toggle('partial', !!isPartial);
+}
+
+function clearCaption() {
+  caption.classList.add('is-empty');
+  captionText.classList.remove('partial');
+  captionText.textContent = 'Tap mic — будь-хто може заговорити';
+}
+
+function pushArchiveCard(turn) {
+  const isUAFirst = turn.sourceLang === 'ua';
+  const side = isUAFirst ? 'left' : 'right';
+  const provenance = `${turn.code} → M → ${turn.targetCode}`;
+  const card = document.createElement('div');
+  card.className = `turn-card ${side}`;
+  card.innerHTML = `
+    <div class="provenance">
+      <span>${provenance}</span>
+      <span class="timestamp">${turn.timestamp} · ${turn.latency}</span>
+    </div>
+    <div class="turn-source">${turn.sourceText}</div>
+    <div class="turn-divider"></div>
+    <div class="turn-target">${turn.targetText}<button class="copy-btn" title="Copy translation">⎘</button></div>
+  `;
+  const copyBtn = card.querySelector('.copy-btn');
+  copyBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    copyToClipboard(turn.targetText);
+    copyBtn.classList.add('is-copied');
+    copyBtn.textContent = '✓';
+    setTimeout(() => { copyBtn.classList.remove('is-copied'); copyBtn.textContent = '⎘'; }, 1200);
+    log('ui', `copied translation: "${turn.targetText.slice(0, 32)}…"`);
+  });
+  archive.appendChild(card);
+  archive.scrollTop = archive.scrollHeight;
+}
+
+function copyToClipboard(text) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); } catch (e) {}
+  document.body.removeChild(ta);
+}
+
+function setPhase(p) {
+  currentPhase = p;
+  phaseReadout.textContent = `phase: ${p}`;
+}
+
+function step(stepName) {
+  const turn = TURNS[currentTurnIdx % TURNS.length];
+
+  switch (stepName) {
+    case 'ua-start': {
+      // input_audio_buffer.speech_started — source side starts speaking
+      const src = turn.sourceLang;
+      const other = turn.targetLang;
+      setActorState(src, 'listening');
+      setActorState('m', 'ready');
+      setActorState(other, 'idle');
+      setCaption(turn.partialText, true);
+      setPhase(`source_listening (${src})`);
+      break;
+    }
+    case 'ua-stop': {
+      // input_audio_buffer.speech_stopped
+      const src = turn.sourceLang;
+      setActorState(src, 'finished');
+      setCaption(turn.sourceText, false);
+      setPhase(`source_finished`);
+      break;
+    }
+    case 'm-translate': {
+      // first response.audio_transcript.delta — M is now generating
+      setActorState('m', 'thinking');
+      setPhase('translating');
+      break;
+    }
+    case 'es-play': {
+      // output_audio_buffer.started — M's voice now playing
+      const tgt = turn.targetLang;
+      setActorState('m', 'ready');
+      setActorState(tgt, 'playing');
+      setCaption(turn.targetPartial, true);
+      setPhase(`target_speaking (${tgt})`);
+      setTimeout(() => setCaption(turn.targetText, false), 600);
+      break;
+    }
+    case 'done-ua-es': {
+      // response.done(completed)
+      const src = turn.sourceLang;
+      const tgt = turn.targetLang;
+      setActorState(src, 'idle');
+      setActorState(tgt, 'idle');
+      setActorState('m', 'ready');
+      pushArchiveCard(turn);
+      currentTurnIdx++;
+      clearCaption();
+      setPhase('idle');
+      break;
+    }
+    case 'reset': {
+      currentTurnIdx = 0;
+      archive.innerHTML = '';
+      setActorState('ua', 'idle');
+      setActorState('m', 'ready');
+      setActorState('es', 'idle');
+      clearCaption();
+      setPhase('idle');
+      stopAuto();
+      break;
+    }
+  }
+}
+
+document.querySelectorAll('.btn[data-step]').forEach(btn => {
+  btn.addEventListener('click', () => step(btn.dataset.step));
+});
+
+function autoCycle() {
+  const sequence = ['ua-start', 'ua-stop', 'm-translate', 'es-play', 'done-ua-es'];
+  const delays = [1200, 1800, 1200, 1400, 1500];
+  let i = 0;
+  function next() {
+    if (!autoTimer) return;
+    step(sequence[i % sequence.length]);
+    i++;
+    autoTimer = setTimeout(next, delays[(i - 1) % delays.length]);
+  }
+  next();
+}
+
+function startAuto() {
+  if (autoTimer) return;
+  document.getElementById('auto-btn').textContent = '■ Stop auto-play';
+  autoTimer = true;
+  autoCycle();
+}
+function stopAuto() {
+  if (!autoTimer) return;
+  if (typeof autoTimer !== 'boolean') clearTimeout(autoTimer);
+  autoTimer = null;
+  document.getElementById('auto-btn').textContent = '▶ Auto-play full cycle';
+}
+document.getElementById('auto-btn').addEventListener('click', () => {
+  if (autoTimer) stopAuto(); else startAuto();
+});
+
+// ============ LANGUAGE PICKER ============
+const LANGS = [
+  {code: 'UK', flag: '🇺🇦'},
+  {code: 'EN', flag: '🇬🇧'},
+  {code: 'ES', flag: '🇪🇸'},
+  {code: 'PT', flag: '🇵🇹'},
+  {code: 'FR', flag: '🇫🇷'},
+  {code: 'DE', flag: '🇩🇪'},
+  {code: 'IT', flag: '🇮🇹'},
+  {code: 'JA', flag: '🇯🇵'},
+  {code: 'ZH', flag: '🇨🇳'},
+  {code: 'KO', flag: '🇰🇷'},
+  {code: 'RU', flag: '🇷🇺'},
+];
+const SIDES = ['ua', 'es'];
+const sideCurrent = { ua: 'UK', es: 'ES' };
+
+function buildPicker(side) {
+  const picker = document.getElementById(`picker-${side}`);
+  picker.innerHTML = '';
+  LANGS.forEach(lang => {
+    const item = document.createElement('div');
+    item.className = 'lang-picker-item';
+    if (lang.code === sideCurrent[side]) item.classList.add('selected');
+    item.innerHTML = `<span class="picker-flag">${lang.flag}</span><span class="picker-code">${lang.code}</span>`;
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectLang(side, lang);
+      closeAllPickers();
+    });
+    picker.appendChild(item);
+  });
+}
+function selectLang(side, lang) {
+  sideCurrent[side] = lang.code;
+  document.getElementById(`flag-${side}`).textContent = lang.flag;
+  document.getElementById(`code-${side}`).textContent = lang.code;
+}
+function openPicker(side) {
+  closeAllPickers();
+  buildPicker(side);
+  document.getElementById(`picker-${side}`).classList.add('is-open');
+}
+function closeAllPickers() {
+  SIDES.forEach(s => document.getElementById(`picker-${s}`).classList.remove('is-open'));
+}
+document.querySelectorAll('.actor[data-side]').forEach(actor => {
+  actor.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openPicker(actor.dataset.side);
+  });
+});
+// Flag is already inside the actor click handler, but make sure clicks on flag don't get blocked
+document.getElementById('flag-ua').addEventListener('click', (e) => {
+  e.stopPropagation();
+  openPicker('ua');
+});
+document.getElementById('flag-es').addEventListener('click', (e) => {
+  e.stopPropagation();
+  openPicker('es');
+});
+document.addEventListener('click', closeAllPickers);
+
+// ============ LOGS TOOLBOX ============
+const logsEl = document.getElementById('logs');
+const logsHeader = document.getElementById('logs-header');
+const logsBody = document.getElementById('logs-body');
+const logsCount = document.getElementById('logs-count');
+const logsCaret = document.getElementById('logs-caret');
+const logsCopyBtn = document.getElementById('logs-copy-btn');
+const logsClearBtn = document.getElementById('logs-clear-btn');
+const logEntries = [];
+
+function log(tag, message) {
+  const now = new Date();
+  const ts = String(now.getHours()).padStart(2, '0') + ':' +
+             String(now.getMinutes()).padStart(2, '0') + ':' +
+             String(now.getSeconds()).padStart(2, '0');
+  logEntries.push({ ts, tag, message });
+  renderLogs();
+}
+function renderLogs() {
+  logsCount.textContent = logEntries.length;
+  if (logEntries.length === 0) {
+    logsBody.innerHTML = '<div class="logs-empty">No events yet. Trigger a step to populate.</div>';
+    return;
+  }
+  logsBody.innerHTML = logEntries.slice(-30).map(e =>
+    `<div class="logs-entry"><span class="ts">${e.ts}</span><span class="tag">[${e.tag}]</span><span>${e.message}</span></div>`
+  ).join('');
+  logsBody.scrollTop = logsBody.scrollHeight;
+}
+function toggleLogs() {
+  logsEl.classList.toggle('is-open');
+  logsCaret.textContent = logsEl.classList.contains('is-open') ? '▾' : '▸';
+}
+logsHeader.addEventListener('click', (e) => {
+  if (e.target.closest('button')) return;
+  toggleLogs();
+});
+logsCopyBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const text = logEntries.map(en => `${en.ts} [${en.tag}] ${en.message}`).join('\n');
+  copyToClipboard(text);
+  logsCopyBtn.classList.add('is-copied');
+  logsCopyBtn.textContent = '✓ Copied';
+  setTimeout(() => { logsCopyBtn.classList.remove('is-copied'); logsCopyBtn.textContent = '⎘ Copy'; }, 1200);
+});
+logsClearBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  logEntries.length = 0;
+  renderLogs();
+});
+
+const _origStep = step;
+step = function(name) { log('rtc', `event → ${name}`); _origStep(name); };
+const _origSelectLang = selectLang;
+selectLang = function(side, lang) { _origSelectLang(side, lang); log('ui', `side ${side.toUpperCase()} → ${lang.code} ${lang.flag}`); };
+document.querySelectorAll('.btn[data-step]').forEach(btn => {
+  const newBtn = btn.cloneNode(true);
+  btn.parentNode.replaceChild(newBtn, btn);
+  newBtn.addEventListener('click', () => step(newBtn.dataset.step));
+});
+
+log('app', 'demo loaded · gpt-realtime-translate stub');
+</script>
+</body>
+</html>

@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Realtime Voice Transcript</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #151b23;
+    --surface2: #1c2430;
+    --line: rgba(255,255,255,0.09);
+    --text: #e8edf3;
+    --muted: #8b949e;
+    --green: #2ea043;
+    --green2: #56d364;
+    --blue: #58a6ff;
+    --orange: #f2a541;
+    --red: #f85149;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 22px 14px 36px;
+  }
+  .shell {
+    width: min(1040px, 100%);
+    margin: 0 auto;
+    display: grid;
+    gap: 14px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 2px 6px;
+  }
+  h1 {
+    margin: 0;
+    font-size: clamp(22px, 3vw, 34px);
+    line-height: 1.08;
+    letter-spacing: 0;
+  }
+  .model-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 8px 12px;
+    color: var(--muted);
+    background: rgba(255,255,255,0.03);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    display: inline-block;
+  }
+  .dot.live {
+    background: var(--green2);
+    box-shadow: 0 0 0 5px rgba(86,211,100,0.12);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(0.72); opacity: 0.55; }
+  }
+  .toolbar {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    align-items: stretch;
+  }
+  .settings {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(130px, 1fr));
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 8px;
+  }
+  label {
+    display: grid;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+  }
+  select, input[type="range"], input[type="text"], textarea {
+    width: 100%;
+    border: 1px solid var(--line);
+    background: #0f141b;
+    color: var(--text);
+    border-radius: 7px;
+    font: inherit;
+  }
+  select, input[type="text"] { padding: 9px 10px; }
+  textarea {
+    min-height: 76px;
+    padding: 10px;
+    resize: vertical;
+    line-height: 1.45;
+  }
+  select:disabled, input:disabled, textarea:disabled, button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .mic-wrap {
+    display: grid;
+    place-items: center;
+    min-width: 156px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .mic-btn {
+    width: 92px;
+    height: 92px;
+    border-radius: 50%;
+    border: 0;
+    cursor: pointer;
+    color: #fff;
+    background: var(--green);
+    display: grid;
+    place-items: center;
+    transition: transform 0.15s, background 0.15s;
+  }
+  .mic-btn svg { width: 36px; height: 36px; }
+  .mic-btn:hover:not(:disabled) { transform: translateY(-1px); }
+  .mic-btn.recording {
+    background: var(--red);
+    box-shadow: 0 0 0 8px rgba(248,81,73,0.13);
+  }
+  .mic-state {
+    margin-top: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .panel {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 8px;
+    min-height: 250px;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .panel-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .panel-status {
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    text-align: right;
+  }
+  .transcript {
+    padding: 14px;
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .turn {
+    border: 1px solid var(--line);
+    background: rgba(255,255,255,0.03);
+    border-radius: 8px;
+    padding: 10px 11px;
+  }
+  .turn.live { border-color: rgba(88,166,255,0.45); }
+  .turn .meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    margin-bottom: 6px;
+  }
+  .turn .body {
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.45;
+    font-size: 16px;
+  }
+  .empty {
+    color: var(--muted);
+    min-height: 116px;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    line-height: 1.45;
+  }
+  .meter {
+    height: 7px;
+    background: rgba(255,255,255,0.06);
+    overflow: hidden;
+    border-radius: 999px;
+    margin: 0 14px 14px;
+  }
+  .meter-fill {
+    width: 0%;
+    height: 100%;
+    background: var(--green2);
+    transition: width 0.08s linear;
+  }
+  .text-send {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  button {
+    border: 0;
+    border-radius: 7px;
+    padding: 10px 14px;
+    background: var(--blue);
+    color: #08111f;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .secondary {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+  }
+  .diag {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+  }
+  .metric {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 10px;
+    min-width: 0;
+  }
+  .metric .v {
+    color: var(--orange);
+    font: 700 15px ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .metric .k {
+    color: var(--muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    margin-top: 4px;
+  }
+  .log {
+    max-height: 150px;
+    overflow-y: auto;
+    border: 1px solid var(--line);
+    background: #0f141b;
+    border-radius: 8px;
+    padding: 10px;
+    color: var(--muted);
+    font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .log .err { color: var(--red); }
+  .log .ok { color: var(--green2); }
+  @media (max-width: 820px) {
+    header, .toolbar, .grid, .text-send { grid-template-columns: 1fr; }
+    header { display: grid; }
+    .settings { grid-template-columns: 1fr 1fr; }
+    .diag { grid-template-columns: 1fr 1fr; }
+    .mic-wrap { min-width: 0; }
+  }
+  @media (max-width: 520px) {
+    .settings, .diag { grid-template-columns: 1fr; }
+    .model-pill { white-space: normal; }
+  }
+</style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <h1>Realtime Voice Transcript</h1>
+      <div class="model-pill"><span id="statusDot" class="dot"></span><span id="modelName">gpt-realtime-2</span></div>
+    </header>
+
+    <section class="toolbar">
+      <div class="settings">
+        <label>
+          Voice
+          <select id="voice">
+            <option value="marin">marin</option>
+            <option value="cedar">cedar</option>
+            <option value="alloy">alloy</option>
+            <option value="ash">ash</option>
+            <option value="ballad">ballad</option>
+            <option value="coral">coral</option>
+            <option value="echo">echo</option>
+            <option value="sage">sage</option>
+            <option value="shimmer">shimmer</option>
+            <option value="verse">verse</option>
+          </select>
+        </label>
+        <label>
+          Input
+          <select id="lang">
+            <option value="">auto</option>
+            <option value="uk">uk</option>
+            <option value="es">es</option>
+            <option value="en">en</option>
+            <option value="ru">ru</option>
+            <option value="de">de</option>
+            <option value="fr">fr</option>
+            <option value="it">it</option>
+            <option value="pt">pt</option>
+          </select>
+        </label>
+        <label>
+          Microphone
+          <select id="micDevice"><option value="">Default</option></select>
+        </label>
+        <label>
+          VAD <span id="vadValue">0.50</span>
+          <input id="vadThreshold" type="range" min="0.1" max="0.9" step="0.05" value="0.5" />
+        </label>
+      </div>
+
+      <div class="mic-wrap">
+        <button id="micBtn" class="mic-btn" type="button" aria-label="Start microphone">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <path d="M12 19v3"/>
+          </svg>
+        </button>
+        <div id="micState" class="mic-state">idle</div>
+      </div>
+    </section>
+
+    <label>
+      Instructions
+      <textarea id="instructions">You are a live voice interpreter between Ukrainian and Spanish. Listen to the user, wait until they finish each phrase, and respond only with the translation. If the user speaks Ukrainian, answer in Spanish. If the user speaks Spanish, answer in Ukrainian. Do not add explanations, acknowledgements, labels, or commentary. If the speech is unclear, ask for a short repeat in the target language.</textarea>
+    </label>
+
+    <section class="grid">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title"><span class="dot" id="inputDot"></span> Heard transcript</div>
+          <div class="panel-status" id="inputStatus">waiting</div>
+        </div>
+        <div id="inputTranscript" class="transcript">
+          <div class="empty">Press the microphone.</div>
+        </div>
+        <div class="meter"><div id="meterFill" class="meter-fill"></div></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title"><span class="dot" id="assistantDot"></span> Model response</div>
+          <div class="panel-status" id="assistantStatus">waiting</div>
+        </div>
+        <div id="assistantTranscript" class="transcript">
+          <div class="empty">Audio response transcript appears here.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="text-send">
+      <input id="textInput" type="text" placeholder="Send text into the same Realtime conversation" disabled />
+      <button id="sendBtn" type="button" disabled>Send</button>
+    </section>
+
+    <section class="diag">
+      <div class="metric"><div id="mConn" class="v">-</div><div class="k">Peer</div></div>
+      <div class="metric"><div id="mIce" class="v">-</div><div class="k">ICE</div></div>
+      <div class="metric"><div id="mDc" class="v">-</div><div class="k">Events</div></div>
+      <div class="metric"><div id="mEventCount" class="v">0</div><div class="k">Count</div></div>
+      <div class="metric"><div id="mTranscriber" class="v">-</div><div class="k">STT</div></div>
+    </section>
+
+    <div id="log" class="log"></div>
+  </main>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+
+const DEVICE_LS_KEY = 'realtime-transcription:audioInputDeviceId';
+let selectedDeviceId = localStorage.getItem(DEVICE_LS_KEY) || '';
+let peerConnection = null;
+let dataChannel = null;
+let micStream = null;
+let remoteAudio = null;
+let meterCtx = null;
+let meterSrc = null;
+let meterAnalyser = null;
+let meterTimer = null;
+let eventCount = 0;
+let running = false;
+
+const inputTurns = new Map();
+const assistantTurns = new Map();
+
+function log(message, cls = '') {
+  const line = document.createElement('div');
+  line.textContent = `${new Date().toLocaleTimeString()} ${message}`;
+  if (cls) line.className = cls;
+  $('log').appendChild(line);
+  $('log').scrollTop = $('log').scrollHeight;
+}
+
+function setDot(id, live) {
+  $(id).className = live ? 'dot live' : 'dot';
+}
+
+function clearEmpty(container) {
+  const empty = container.querySelector('.empty');
+  if (empty) empty.remove();
+}
+
+function ensureTurn(map, containerId, id, kind, metaText) {
+  let entry = map.get(id);
+  if (entry) return entry;
+  const container = $(containerId);
+  clearEmpty(container);
+  const el = document.createElement('div');
+  el.className = 'turn live';
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  const left = document.createElement('span');
+  left.textContent = metaText;
+  const right = document.createElement('span');
+  right.textContent = 'live';
+  const body = document.createElement('div');
+  body.className = 'body';
+  meta.append(left, right);
+  el.append(meta, body);
+  container.appendChild(el);
+  entry = { el, body, right, text: '', kind };
+  map.set(id, entry);
+  container.scrollTop = container.scrollHeight;
+  return entry;
+}
+
+function appendTurn(map, containerId, id, delta, kind, metaText) {
+  const entry = ensureTurn(map, containerId, id, kind, metaText);
+  entry.text += delta;
+  entry.body.textContent = entry.text;
+  $(containerId).scrollTop = $(containerId).scrollHeight;
+}
+
+function finalizeTurn(map, containerId, id, text) {
+  const entry = ensureTurn(map, containerId, id, '', id);
+  if (typeof text === 'string') {
+    entry.text = text;
+    entry.body.textContent = text;
+  }
+  entry.el.classList.remove('live');
+  entry.right.textContent = 'done';
+  $(containerId).scrollTop = $(containerId).scrollHeight;
+}
+
+async function loadAudioDevices(promptForPermission = false) {
+  try {
+    if (promptForPermission) {
+      const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+      tmp.getTracks().forEach((track) => track.stop());
+    }
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter((device) => device.kind === 'audioinput');
+    const select = $('micDevice');
+    select.innerHTML = '<option value="">Default</option>';
+    for (const input of inputs) {
+      select.add(new Option(input.label || `Microphone ${input.deviceId.slice(0, 6)}`, input.deviceId));
+    }
+    if (selectedDeviceId && inputs.some((input) => input.deviceId === selectedDeviceId)) {
+      select.value = selectedDeviceId;
+    } else {
+      selectedDeviceId = '';
+    }
+    log(`[mic] ${inputs.length} input device(s)`);
+  } catch (error) {
+    log(`[mic] device list failed: ${error.message}`, 'err');
+  }
+}
+
+async function createSession() {
+  const response = await fetch('/api/realtime-transcription/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      voice: $('voice').value,
+      instructions: $('instructions').value,
+      inputLanguage: $('lang').value,
+      vadThreshold: Number($('vadThreshold').value),
+      includeLogprobs: true,
+    }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || `Session HTTP ${response.status}`);
+  return data;
+}
+
+async function captureMic() {
+  const audio = selectedDeviceId
+    ? { deviceId: { exact: selectedDeviceId }, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+    : { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+  const stream = await navigator.mediaDevices.getUserMedia({ audio, video: false });
+  if (stream.getAudioTracks().length === 0) {
+    stream.getTracks().forEach((track) => track.stop());
+    throw new Error('No microphone track');
+  }
+  return stream;
+}
+
+function startInputMeter(stream) {
+  meterCtx = new AudioContext();
+  meterSrc = meterCtx.createMediaStreamSource(stream);
+  meterAnalyser = meterCtx.createAnalyser();
+  meterAnalyser.fftSize = 1024;
+  meterSrc.connect(meterAnalyser);
+  const buffer = new Float32Array(meterAnalyser.fftSize);
+  meterTimer = setInterval(() => {
+    meterAnalyser.getFloatTimeDomainData(buffer);
+    let sum = 0;
+    for (const sample of buffer) sum += sample * sample;
+    const rms = Math.sqrt(sum / buffer.length);
+    $('meterFill').style.width = `${Math.min(100, rms * 640)}%`;
+  }, 80);
+}
+
+async function connectRealtime(session, stream) {
+  peerConnection = new RTCPeerConnection();
+  remoteAudio = new Audio();
+  remoteAudio.autoplay = true;
+  remoteAudio.playsInline = true;
+
+  peerConnection.onconnectionstatechange = () => {
+    const state = peerConnection.connectionState;
+    $('mConn').textContent = state;
+    $('micState').textContent = state;
+    log(`[pc] ${state}`);
+  };
+  peerConnection.oniceconnectionstatechange = () => {
+    $('mIce').textContent = peerConnection.iceConnectionState;
+  };
+  peerConnection.ontrack = ({ streams }) => {
+    remoteAudio.srcObject = streams[0];
+    remoteAudio.play().catch((error) => log(`[audio] ${error.message}`, 'err'));
+  };
+
+  dataChannel = peerConnection.createDataChannel('oai-events');
+  dataChannel.onopen = () => {
+    $('mDc').textContent = 'open';
+    $('textInput').disabled = false;
+    $('sendBtn').disabled = false;
+    setDot('statusDot', true);
+    log('[dc] open', 'ok');
+  };
+  dataChannel.onclose = () => {
+    $('mDc').textContent = 'closed';
+    $('textInput').disabled = true;
+    $('sendBtn').disabled = true;
+  };
+  dataChannel.onmessage = handleRealtimeEvent;
+
+  for (const track of stream.getAudioTracks()) peerConnection.addTrack(track, stream);
+
+  const offer = await peerConnection.createOffer();
+  await peerConnection.setLocalDescription(offer);
+
+  const sdpResponse = await fetch(`https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(session.model)}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${session.client_secret}`,
+      'Content-Type': 'application/sdp',
+    },
+    body: offer.sdp,
+  });
+  const answerSdp = await sdpResponse.text();
+  if (!sdpResponse.ok) throw new Error(`SDP ${sdpResponse.status}: ${answerSdp}`);
+  await peerConnection.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+}
+
+function handleRealtimeEvent(message) {
+  let event;
+  try { event = JSON.parse(message.data); } catch { return; }
+  eventCount += 1;
+  $('mEventCount').textContent = String(eventCount);
+
+  switch (event.type) {
+    case 'session.created':
+    case 'session.updated':
+      log(`[evt] ${event.type}`);
+      break;
+
+    case 'input_audio_buffer.speech_started':
+      $('inputStatus').textContent = 'speech';
+      setDot('inputDot', true);
+      break;
+    case 'input_audio_buffer.speech_stopped':
+      $('inputStatus').textContent = 'processing';
+      setDot('inputDot', false);
+      break;
+    case 'input_audio_buffer.committed':
+      $('inputStatus').textContent = 'committed';
+      break;
+
+    case 'conversation.item.input_audio_transcription.delta':
+      if (event.item_id && typeof event.delta === 'string') {
+        appendTurn(inputTurns, 'inputTranscript', event.item_id, event.delta, 'user', event.item_id);
+        $('inputStatus').textContent = 'transcribing';
+      }
+      break;
+    case 'conversation.item.input_audio_transcription.completed':
+      if (event.item_id) {
+        finalizeTurn(inputTurns, 'inputTranscript', event.item_id, event.transcript || '');
+        $('inputStatus').textContent = 'done';
+      }
+      break;
+    case 'conversation.item.input_audio_transcription.failed':
+      $('inputStatus').textContent = 'failed';
+      log(`[stt] failed: ${JSON.stringify(event.error || event)}`, 'err');
+      break;
+
+    case 'response.output_audio_transcript.delta':
+    case 'response.audio_transcript.delta':
+      if (event.item_id && typeof event.delta === 'string') {
+        appendTurn(assistantTurns, 'assistantTranscript', event.item_id, event.delta, 'assistant', event.item_id);
+        $('assistantStatus').textContent = 'speaking';
+        setDot('assistantDot', true);
+      }
+      break;
+    case 'response.output_audio_transcript.done':
+    case 'response.audio_transcript.done':
+      if (event.item_id) {
+        finalizeTurn(assistantTurns, 'assistantTranscript', event.item_id, event.transcript || '');
+        $('assistantStatus').textContent = 'done';
+        setDot('assistantDot', false);
+      }
+      break;
+    case 'response.output_text.delta':
+    case 'response.text.delta':
+      if (event.item_id && typeof event.delta === 'string') {
+        appendTurn(assistantTurns, 'assistantTranscript', event.item_id, event.delta, 'assistant', event.item_id);
+      }
+      break;
+
+    case 'conversation.item.done':
+      ingestDoneItem(event.item);
+      break;
+    case 'response.done':
+      $('assistantStatus').textContent = event.response?.status || 'done';
+      setDot('assistantDot', false);
+      break;
+    case 'rate_limits.updated':
+      break;
+    case 'error':
+      log(`[evt] error: ${JSON.stringify(event.error || event)}`, 'err');
+      break;
+    default:
+      break;
+  }
+}
+
+function ingestDoneItem(item) {
+  if (!item || !Array.isArray(item.content)) return;
+  if (item.role === 'assistant') {
+    const transcript = item.content.map((part) => part.transcript || part.text || '').filter(Boolean).join('\n');
+    if (transcript) finalizeTurn(assistantTurns, 'assistantTranscript', item.id, transcript);
+  }
+  if (item.role === 'user') {
+    const transcript = item.content.map((part) => part.transcript || part.text || '').filter(Boolean).join('\n');
+    if (transcript) finalizeTurn(inputTurns, 'inputTranscript', item.id, transcript);
+  }
+}
+
+function sendText() {
+  const text = $('textInput').value.trim();
+  if (!text || !dataChannel || dataChannel.readyState !== 'open') return;
+
+  const localId = `text-${Date.now()}`;
+  finalizeTurn(inputTurns, 'inputTranscript', localId, text);
+  dataChannel.send(JSON.stringify({
+    type: 'conversation.item.create',
+    item: {
+      type: 'message',
+      role: 'user',
+      content: [{ type: 'input_text', text }],
+    },
+  }));
+  dataChannel.send(JSON.stringify({ type: 'response.create' }));
+  $('textInput').value = '';
+}
+
+function setControls(isRunning) {
+  $('micBtn').classList.toggle('recording', isRunning);
+  $('micBtn').setAttribute('aria-label', isRunning ? 'Stop microphone' : 'Start microphone');
+  $('voice').disabled = isRunning;
+  $('lang').disabled = isRunning;
+  $('micDevice').disabled = isRunning;
+  $('vadThreshold').disabled = isRunning;
+  $('instructions').disabled = isRunning;
+  if (!isRunning) {
+    $('textInput').disabled = true;
+    $('sendBtn').disabled = true;
+  }
+}
+
+async function start() {
+  running = true;
+  setControls(true);
+  setDot('statusDot', false);
+  setDot('inputDot', false);
+  setDot('assistantDot', false);
+  $('inputTranscript').innerHTML = '<div class="empty">Listening...</div>';
+  $('assistantTranscript').innerHTML = '<div class="empty">Waiting for model response...</div>';
+  inputTurns.clear();
+  assistantTurns.clear();
+  eventCount = 0;
+  $('mEventCount').textContent = '0';
+  $('inputStatus').textContent = 'starting';
+  $('assistantStatus').textContent = 'waiting';
+  $('micState').textContent = 'starting';
+
+  try {
+    micStream = await captureMic();
+    startInputMeter(micStream);
+    const session = await createSession();
+    $('modelName').textContent = session.model;
+    $('mTranscriber').textContent = session.transcriptionModel || '-';
+    log(`[session] ${session.model} / ${session.transcriptionModel}`, 'ok');
+    await connectRealtime(session, micStream);
+    $('micState').textContent = 'recording';
+  } catch (error) {
+    log(`[start] ${error.message}`, 'err');
+    await stop();
+  }
+}
+
+async function stop() {
+  running = false;
+  setControls(false);
+  setDot('statusDot', false);
+  setDot('inputDot', false);
+  setDot('assistantDot', false);
+  if (meterTimer) clearInterval(meterTimer);
+  meterTimer = null;
+  meterSrc?.disconnect();
+  meterAnalyser?.disconnect();
+  meterSrc = null;
+  meterAnalyser = null;
+  if (meterCtx?.state !== 'closed') {
+    try { await meterCtx?.close(); } catch {}
+  }
+  meterCtx = null;
+  try { dataChannel?.close(); } catch {}
+  try { peerConnection?.close(); } catch {}
+  dataChannel = null;
+  peerConnection = null;
+  micStream?.getTracks().forEach((track) => track.stop());
+  micStream = null;
+  if (remoteAudio) {
+    try { remoteAudio.pause(); remoteAudio.srcObject = null; } catch {}
+  }
+  remoteAudio = null;
+  $('meterFill').style.width = '0%';
+  $('mConn').textContent = '-';
+  $('mIce').textContent = '-';
+  $('mDc').textContent = '-';
+  $('micState').textContent = 'idle';
+  $('inputStatus').textContent = 'waiting';
+  $('assistantStatus').textContent = 'waiting';
+  log('[stop] closed');
+}
+
+$('micBtn').addEventListener('click', () => running ? stop() : start());
+$('sendBtn').addEventListener('click', sendText);
+$('textInput').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    sendText();
+  }
+});
+$('micDevice').addEventListener('change', () => {
+  selectedDeviceId = $('micDevice').value || '';
+  localStorage.setItem(DEVICE_LS_KEY, selectedDeviceId);
+});
+$('vadThreshold').addEventListener('input', () => {
+  $('vadValue').textContent = Number($('vadThreshold').value).toFixed(2);
+});
+
+loadAudioDevices(false);
+log('ready');
+</script>
+</body>
+</html>

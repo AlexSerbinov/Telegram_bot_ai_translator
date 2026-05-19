@@ -30,6 +30,14 @@ const config = {
     clientSecretUrl: 'https://api.openai.com/v1/realtime/client_secrets',
   },
 
+  // OpenAI Realtime voice monitor (browser WebRTC, used by /webapp/realtime-transcription.html)
+  openaiRealtimeVoice: {
+    apiKey: process.env.OPENAI_API_KEY,
+    model: process.env.OPENAI_REALTIME_VOICE_MODEL || 'gpt-realtime-2',
+    transcriptionModel: process.env.OPENAI_REALTIME_VOICE_TRANSCRIPTION_MODEL || 'gpt-realtime-whisper',
+    clientSecretUrl: 'https://api.openai.com/v1/realtime/client_secrets',
+  },
+
   // ElevenLabs Configuration
   elevenLabs: {
     apiKey: process.env.ELEVEN_LABS_API_KEY,

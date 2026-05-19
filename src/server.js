@@ -368,7 +368,7 @@ Translate ONLY the NEW source segment provided by the user, as a natural continu
         inputLanguage = '',
         roomMode = false,
         vadThreshold = 0.5,
-        transcriptionModel = 'gpt-4o-transcribe',
+        transcriptionModel = null,
       } = req.body || {};
 
       if (!config.openaiRealtimeChat.apiKey) {
@@ -378,26 +378,33 @@ Translate ONLY the NEW source segment provided by the user, as a natural continu
       const noiseReduction = roomMode ? null : { type: 'near_field' };
       const threshold = Math.max(0, Math.min(1, Number(vadThreshold) || 0.5));
 
+      const inputAudio = {
+        noise_reduction: noiseReduction,
+        turn_detection: {
+          type: 'server_vad',
+          threshold,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 500,
+        },
+      };
+      if (transcriptionModel) {
+        inputAudio.transcription = {
+          model: transcriptionModel,
+          ...(inputLanguage ? { language: inputLanguage } : {}),
+        };
+      }
+
       const body = {
         session: {
           type: 'realtime',
           model: config.openaiRealtimeChat.model,
           audio: {
-            input: {
-              transcription: {
-                model: transcriptionModel,
-                ...(inputLanguage ? { language: inputLanguage } : {}),
-              },
-              noise_reduction: noiseReduction,
-              turn_detection: {
-                type: 'server_vad',
-                threshold,
-                prefix_padding_ms: 300,
-                silence_duration_ms: 500,
-              },
-            },
+            input: inputAudio,
             output: { voice },
           },
+          ...(transcriptionModel === 'gpt-realtime-whisper'
+            ? { include: ['item.input_audio_transcription.logprobs'] }
+            : {}),
           ...(instructions ? { instructions } : {}),
         },
       };

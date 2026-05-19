@@ -221,8 +221,14 @@ The user must understand which mode does what within 0.5 seconds. Each mode has 
 2. Subtitle: `Two-way · UA ↔ ES · Mediator`
 3. Lang pair selector (same as Phrase): A pill / `⇄` swap / B pill. NEW for v3 — Bridge needs explicit language pair so model knows which two languages to mediate (was implicit in v2, now explicit). Tap pill opens language sheet.
 4. Conversation stage (flex-1, 12pt vertical padding):
-   - **Vertical center axis** (1pt hairline running top-to-bottom of stage)
-   - **Model node** at vertical center — 28pt circle, 1pt accent border, surface bg, 4pt outline gap to canvas, contains "M" letter (JetBrains Mono Semibold accent color). Node sits over axis.
+   - **ConductorStage** (v9 update) — top of stage. Three-actor cast: left `EndpointPill` (Side A, langA) + `DataFlow` strip + central M node (48pt circle with halo, 1pt accent border) + `DataFlow` strip + right `EndpointPill` (Side B, langB). Below the row sits a caption box that holds the current live partial transcript (italic muted while streaming, solid when finalized). Eyebrow above the caption labels which side it belongs to. Replaces the prior `LangPill / LangSwapButton / LangPill` row + isolated `ModelNode` layout — provides one composite component that owns the realtime cycle's visual state. (v3.1 removed the vertical-axis hairline; v9 collapses pair selector + M into a single ConductorStage.)
+   - **Realtime states** driven by `BridgeSessionManager.cyclePhase`:
+     - `.idle` — both endpoints rest, M idle, caption shows hint.
+     - `.sourceListening(side)` — that side's pill activates (accent border + soft fill, state label "speaking"). DataFlow on that half animates 3 accent dots toward M. Caption box shows the streaming partial text in italic.
+     - `.sourceFinished(side)` — side pill switches to "done ✓", DataFlow stops, caption text becomes solid.
+     - `.translating(sourceSide)` — M's halo intensifies, three orbital dots spin around M at 1.2s linear loop. Both endpoints rest.
+     - `.targetSpeaking(side)` — opposite side activates (state "hearing"), DataFlow on that half animates dots from M outward. Caption shows the translated text streaming in.
+   - **Provenance trail per archived turn** — each completed turn renders as a paired card below the ConductorStage with `ProvenanceTrail` header (`UA → M → ES   02:47 · 0.8s` in JetBrains Mono accent + MM:SS timestamp + per-turn latency), source text (body-emphasis ink), hairline divider, translation (body muted) with a `CopyButton` (📋 → ✓) for one-tap clipboard.
    - Turn cards alternating sides:
      - Right turns (user / language A): right-aligned, 12pt right padding, 50pt left padding (so they don't overlap model node)
      - Left turns (other / language B): left-aligned, 12pt left padding, 50pt right padding

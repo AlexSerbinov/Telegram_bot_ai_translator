@@ -1,0 +1,1301 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>V9 · Hybrid — Conductor stage + Provenance cards</title>
+<style>
+  :root {
+    --bg-canvas: #0A0A0A;
+    --bg-surface: #161616;
+    --bg-surface-2: #1F1F1F;
+    --text-ink: #FAFAFA;
+    --text-muted: #A3A3A3;
+    --text-subtle: #525252;
+    --accent: #3D8A6A;
+    --accent-soft: #1A2E25;
+    --accent-glow: rgba(61, 138, 106, 0.30);
+    --hairline: #262626;
+    --hairline-strong: #404040;
+    --success: #5FA77C;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #050505;
+    color: var(--text-ink);
+    font-family: -apple-system, "SF Pro Display", BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+  }
+  .nav {
+    align-self: stretch;
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .nav a { color: var(--accent); text-decoration: none; }
+  .layout {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    gap: 40px;
+    max-width: 1100px;
+    width: 100%;
+  }
+  .phone {
+    width: 390px;
+    height: 844px;
+    background: var(--bg-canvas);
+    border: 14px solid #1a1a1a;
+    border-radius: 48px;
+    overflow: hidden;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  }
+  .status-bar {
+    height: 47px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 28px;
+    font-family: -apple-system;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .screen {
+    height: calc(100% - 47px);
+    padding: 0 20px 16px;
+    display: flex;
+    flex-direction: column;
+  }
+  .header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 2px;
+  }
+  .title {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .live-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+  }
+  .live-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1.6s linear infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.45;} }
+  .eyebrow {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+
+  /* ============ CONDUCTOR STAGE (from V7) ============ */
+  .stage {
+    background: rgba(61, 138, 106, 0.04);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: 16px 12px;
+    margin-bottom: 10px;
+  }
+  .stage-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .endpoint {
+    flex: 0 0 70px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .endpoint-flag { font-size: 20px; }
+  .endpoint-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 6px 4px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .endpoint.is-active .endpoint-card {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .endpoint-code {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+  }
+  .endpoint-state {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 8px;
+    color: var(--text-subtle);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    height: 10px;
+  }
+  /* Language picker */
+  .endpoint { position: relative; }
+  .endpoint-card { cursor: pointer; }
+  .endpoint-card:hover { border-color: var(--hairline-strong); }
+  .chevron {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 8px;
+    color: var(--text-subtle);
+    margin-left: 3px;
+    vertical-align: middle;
+  }
+  .lang-picker {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-surface-2);
+    border: 1px solid var(--hairline-strong);
+    border-radius: 6px;
+    padding: 4px;
+    z-index: 100;
+    min-width: 120px;
+    max-height: 240px;
+    overflow-y: auto;
+    display: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+  .lang-picker.is-open { display: block; }
+  .lang-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--text-ink);
+    white-space: nowrap;
+  }
+  .lang-picker-item:hover { background: var(--accent-soft); }
+  .lang-picker-item.selected {
+    color: var(--accent);
+    background: rgba(61, 138, 106, 0.08);
+  }
+  .lang-picker-item .picker-flag { font-size: 15px; }
+  .lang-picker-item .picker-code {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+  }
+  .flow {
+    flex: 1;
+    height: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .flow-dot {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--text-subtle);
+    opacity: 0;
+  }
+  .flow.is-active .flow-dot {
+    background: var(--accent);
+    opacity: 1;
+    animation: flowRight 1.6s linear infinite;
+  }
+  .flow.is-active.is-reverse .flow-dot {
+    animation: flowLeft 1.6s linear infinite;
+  }
+  .flow-dot:nth-child(1) { animation-delay: 0.0s !important; }
+  .flow-dot:nth-child(2) { animation-delay: 0.4s !important; }
+  .flow-dot:nth-child(3) { animation-delay: 0.8s !important; }
+  .flow-dot:nth-child(4) { animation-delay: 1.2s !important; }
+  @keyframes flowRight {
+    0%   { left: 0%; opacity: 0; }
+    10%  { opacity: 1; }
+    90%  { opacity: 1; }
+    100% { left: 100%; opacity: 0; }
+  }
+  @keyframes flowLeft {
+    0%   { left: 100%; opacity: 0; }
+    10%  { opacity: 1; }
+    90%  { opacity: 1; }
+    100% { left: 0%; opacity: 0; }
+  }
+  .conductor {
+    position: relative;
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .conductor::before {
+    content: '';
+    position: absolute;
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: var(--accent-glow);
+    filter: blur(10px);
+    opacity: 0.5;
+    transition: opacity 0.3s;
+  }
+  .conductor.is-thinking::before {
+    opacity: 1;
+  }
+  .conductor-disk {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--bg-canvas);
+    border: 2px solid var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+    font-family: "JetBrains Mono", monospace;
+    font-weight: 600;
+    font-size: 18px;
+    position: relative;
+    z-index: 2;
+  }
+  .conductor-orbit {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .conductor.is-thinking .conductor-orbit {
+    opacity: 1;
+    animation: orbit 1.2s linear infinite;
+  }
+  .conductor-orbit-dot {
+    position: absolute;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    top: 50%;
+    left: 50%;
+    margin-left: -2.5px;
+    margin-top: -2.5px;
+  }
+  .conductor-orbit-dot:nth-child(1) { transform: rotate(0deg) translateX(28px); }
+  .conductor-orbit-dot:nth-child(2) { transform: rotate(120deg) translateX(28px); }
+  .conductor-orbit-dot:nth-child(3) { transform: rotate(240deg) translateX(28px); }
+  @keyframes orbit { to { transform: rotate(360deg); } }
+  .conductor-label {
+    text-align: center;
+    margin-top: 4px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 8px;
+    color: var(--text-subtle);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    min-height: 10px;
+  }
+  .stage-mid {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .stage-caption {
+    min-height: 44px;
+    margin-top: 12px;
+    padding: 8px 8px 0;
+    text-align: center;
+    border-top: 1px solid var(--hairline);
+  }
+  .stage-caption-source {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px;
+    color: var(--text-subtle);
+    letter-spacing: 0.16em;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    min-height: 11px;
+  }
+  .stage-caption-text {
+    font-size: 14px;
+    line-height: 19px;
+    font-weight: 500;
+  }
+  .stage-caption-text.partial {
+    font-style: italic;
+    opacity: 0.7;
+  }
+  .stage-caption.is-empty .stage-caption-text {
+    color: var(--text-subtle);
+    font-style: italic;
+    font-size: 12px;
+  }
+
+  /* ============ ARCHIVE (V5-style provenance cards) ============ */
+  .archive-divider {
+    margin: 8px 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .archive-divider::before,
+  .archive-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--hairline);
+  }
+  .archive-divider span {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    color: var(--text-subtle);
+    text-transform: uppercase;
+  }
+  .archive {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+  .archive::-webkit-scrollbar { width: 4px; }
+  .archive::-webkit-scrollbar-track { background: transparent; }
+  .archive::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 2px; }
+  .turn-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    animation: slideIn 0.3s ease-out;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  /* Right-aligned cards (when source = side B, e.g. ES) */
+  .turn-card.right { margin-left: 36px; }
+  .turn-card.left  { margin-right: 36px; }
+  .provenance {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .provenance .timestamp {
+    color: var(--text-subtle);
+  }
+  .turn-source {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    line-height: 19px;
+  }
+  .turn-divider {
+    height: 1px;
+    background: var(--hairline);
+    margin: 6px 0;
+  }
+  .turn-target {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 18px;
+  }
+
+  /* MIC */
+  .mic-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding-top: 8px;
+  }
+  .mic {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px var(--accent-glow), 0 0 0 1px var(--accent);
+    cursor: pointer;
+  }
+  .mic svg { width: 26px; height: 26px; fill: white; }
+  .mic-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px;
+    color: var(--text-subtle);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  /* CONTROLS */
+  .controls {
+    background: var(--bg-surface);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    padding: 24px;
+    height: fit-content;
+  }
+  .controls h3 {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 12px;
+  }
+  .controls .sub {
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 20px;
+    margin-bottom: 20px;
+  }
+  .phase-readout {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    background: var(--bg-canvas);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+  }
+  .btn-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .btn {
+    background: var(--bg-canvas);
+    border: 1px solid var(--hairline-strong);
+    color: var(--text-ink);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .btn:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+  .btn-row.full { grid-template-columns: 1fr; }
+  .recipe {
+    background: rgba(61, 138, 106, 0.08);
+    border: 1px solid rgba(61, 138, 106, 0.3);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-top: 16px;
+    font-size: 12px;
+    line-height: 19px;
+    color: var(--text-muted);
+  }
+  .recipe strong { color: var(--accent); }
+  .recipe code {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    background: var(--bg-canvas);
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+  .legend {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--hairline);
+  }
+  .legend h4 {
+    font-size: 11px;
+    font-family: "JetBrains Mono", monospace;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+    margin-bottom: 12px;
+  }
+  .legend-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 18px;
+  }
+  .legend-tag {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: var(--bg-canvas);
+    color: var(--accent);
+    min-width: 80px;
+    text-align: center;
+    letter-spacing: 0.1em;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  /* ============ STRONGER ENDPOINT CTA ============ */
+  .endpoint-flag {
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+  .endpoint-flag:hover { transform: scale(1.1); }
+  .endpoint-card {
+    border-color: var(--hairline-strong);
+    position: relative;
+  }
+  .endpoint-card::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; left: 8px; right: 8px;
+    height: 1px;
+    background: var(--accent);
+    opacity: 0.4;
+    transition: opacity 0.2s;
+  }
+  .endpoint-card:hover::after { opacity: 1; }
+  .chevron { color: var(--accent) !important; font-size: 9px !important; }
+  .endpoint-tap-hint {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 7px;
+    color: var(--accent);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-top: 2px;
+    opacity: 0.7;
+  }
+
+  /* ============ COPY BUTTON on cards ============ */
+  .turn-target { position: relative; padding-right: 28px; }
+  .copy-btn {
+    position: absolute;
+    top: 0px; right: 0px;
+    background: transparent;
+    border: 1px solid var(--hairline);
+    color: var(--text-subtle);
+    width: 22px; height: 22px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.15s;
+  }
+  .copy-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .copy-btn.is-copied {
+    border-color: var(--success);
+    color: var(--success);
+  }
+
+  /* ============ LOGS TOOLBOX ============ */
+  .logs {
+    background: var(--bg-surface);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    margin-top: 8px;
+    margin-bottom: 6px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .logs-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    cursor: pointer;
+    background: var(--bg-surface-2);
+  }
+  .logs-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .logs-title .caret { color: var(--text-subtle); }
+  .logs-count {
+    color: var(--accent);
+  }
+  .logs-actions {
+    display: flex;
+    gap: 4px;
+  }
+  .logs-action-btn {
+    background: transparent;
+    border: 1px solid var(--hairline);
+    color: var(--text-subtle);
+    padding: 3px 7px;
+    border-radius: 3px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 8px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .logs-action-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .logs-action-btn.is-copied {
+    border-color: var(--success);
+    color: var(--success);
+  }
+  .logs-body {
+    max-height: 0;
+    overflow-y: auto;
+    padding: 0;
+    transition: max-height 0.25s ease, padding 0.25s ease;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px;
+    line-height: 14px;
+    color: var(--text-muted);
+  }
+  .logs.is-open .logs-body {
+    max-height: 100px;
+    padding: 6px 10px;
+  }
+  .logs-entry {
+    display: flex;
+    gap: 6px;
+    padding: 1px 0;
+  }
+  .logs-entry .ts { color: var(--text-subtle); flex-shrink: 0; }
+  .logs-entry .tag { color: var(--accent); flex-shrink: 0; }
+  .logs-empty {
+    color: var(--text-subtle);
+    font-style: italic;
+    padding: 4px 0;
+  }
+
+  /* ============ TAB BAR ============ */
+  .tab-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    background: var(--bg-surface);
+    border: 1px solid var(--hairline);
+    border-radius: 28px;
+    padding: 6px;
+    margin-top: 8px;
+    flex-shrink: 0;
+  }
+  .tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 6px 8px;
+    border-radius: 22px;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.15s;
+  }
+  .tab:hover { background: var(--bg-surface-2); }
+  .tab.is-active {
+    background: var(--bg-surface-2);
+  }
+  .tab-icon {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 18px;
+    line-height: 1;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .tab.is-active .tab-icon {
+    color: var(--accent);
+  }
+  .tab-label {
+    font-family: -apple-system, sans-serif;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .tab.is-active .tab-label {
+    color: var(--accent);
+  }
+  /* Top accent line for active tab per DESIGN.md */
+  .tab.is-active::before {
+    content: '';
+    position: absolute;
+    top: 2px; left: 30%; right: 30%;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 1px;
+  }
+
+  /* Update mic-area to be more compact since tab-bar is below */
+  .mic-area { padding-top: 6px; padding-bottom: 0; }
+</style>
+</head>
+<body>
+  <div class="nav">
+    <span>V9 · Hybrid — Conductor stage (V7) + Provenance cards (V5)</span>
+    <a href="./index.html">← back to demos</a>
+  </div>
+
+  <div class="layout">
+    <div class="phone">
+      <div class="status-bar">
+        <span>10:25</span>
+        <span>90</span>
+      </div>
+      <div class="screen">
+        <div class="header-row">
+          <div class="title">Bridge</div>
+          <div class="live-indicator"><span class="live-dot"></span><span>Live · 2:47</span></div>
+        </div>
+        <div class="eyebrow">— TWO-WAY · UK ↔ ES · MEDIATOR</div>
+
+        <!-- ============ CONDUCTOR STAGE (V7) ============ -->
+        <div class="stage">
+          <div class="stage-row">
+            <div class="endpoint" id="endpoint-ua">
+              <div class="endpoint-flag" id="flag-ua">🇺🇦</div>
+              <div class="endpoint-card" data-side="ua">
+                <div class="endpoint-code"><span id="code-ua">UA</span><span class="chevron">▾</span></div>
+                <div class="endpoint-state" id="state-ua">idle</div>
+              </div>
+              <div class="lang-picker" id="picker-ua"></div>
+            </div>
+
+            <div class="flow" id="flow-left">
+              <div class="flow-dot"></div><div class="flow-dot"></div>
+              <div class="flow-dot"></div><div class="flow-dot"></div>
+            </div>
+
+            <div class="stage-mid">
+              <div class="conductor" id="conductor">
+                <div class="conductor-disk">M</div>
+                <div class="conductor-orbit">
+                  <div class="conductor-orbit-dot"></div>
+                  <div class="conductor-orbit-dot"></div>
+                  <div class="conductor-orbit-dot"></div>
+                </div>
+              </div>
+              <div class="conductor-label" id="m-label">ready</div>
+            </div>
+
+            <div class="flow" id="flow-right">
+              <div class="flow-dot"></div><div class="flow-dot"></div>
+              <div class="flow-dot"></div><div class="flow-dot"></div>
+            </div>
+
+            <div class="endpoint" id="endpoint-es">
+              <div class="endpoint-flag" id="flag-es">🇪🇸</div>
+              <div class="endpoint-card" data-side="es">
+                <div class="endpoint-code"><span id="code-es">ES</span><span class="chevron">▾</span></div>
+                <div class="endpoint-state" id="state-es">idle</div>
+              </div>
+              <div class="lang-picker" id="picker-es"></div>
+            </div>
+          </div>
+
+          <div class="stage-caption is-empty" id="caption">
+            <div class="stage-caption-source" id="caption-source">&nbsp;</div>
+            <div class="stage-caption-text" id="caption-text">Хтось має тапнути мікрофон щоб почати</div>
+          </div>
+        </div>
+
+        <!-- ============ ARCHIVE — V5-style cards ============ -->
+        <div class="archive-divider"><span>Архів</span></div>
+        <div class="archive" id="archive">
+          <!-- Cards inserted by JS -->
+        </div>
+
+        <!-- LOGS TOOLBOX (collapsible) -->
+        <div class="logs" id="logs">
+          <div class="logs-header" id="logs-header">
+            <div class="logs-title">
+              <span class="caret" id="logs-caret">▸</span>
+              <span>DIAG LOG · <span class="logs-count" id="logs-count">0</span></span>
+            </div>
+            <div class="logs-actions">
+              <button class="logs-action-btn" id="logs-copy-btn">⎘ Copy</button>
+              <button class="logs-action-btn" id="logs-clear-btn">✕ Clear</button>
+            </div>
+          </div>
+          <div class="logs-body" id="logs-body">
+            <div class="logs-empty">No events yet. Trigger a step to populate.</div>
+          </div>
+        </div>
+
+        <!-- MIC -->
+        <div class="mic-area">
+          <div class="mic">
+            <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+          </div>
+          <div class="mic-label">Speaking · Auto-detect</div>
+        </div>
+
+        <!-- TAB BAR -->
+        <div class="tab-bar">
+          <div class="tab" title="Phrase — one-shot translation">
+            <div class="tab-icon">═</div>
+            <div class="tab-label">Phrase</div>
+          </div>
+          <div class="tab" title="Companion — listen via AirPods">
+            <div class="tab-icon">≋</div>
+            <div class="tab-label">Companion</div>
+          </div>
+          <div class="tab is-active" title="Bridge — two-way mediator">
+            <div class="tab-icon">⇆</div>
+            <div class="tab-label">Bridge</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <h3>Hybrid Controls</h3>
+      <p class="sub">Conductor stage on top with animated dataflow + orbiting M (cinematic from V7). Provenance cards below — alternating left/right with <code>UA → M → ES</code> trail and source/translation split (clear archive from V5).</p>
+      <div class="phase-readout" id="phase-readout">phase: idle</div>
+
+      <div class="btn-row">
+        <button class="btn" data-step="ua-start">UA speech_started</button>
+        <button class="btn" data-step="ua-stop">UA speech_stopped</button>
+        <button class="btn" data-step="m-translate">M response start</button>
+        <button class="btn" data-step="es-play">M audio.started</button>
+        <button class="btn" data-step="done">response.done</button>
+        <button class="btn" data-step="reset">Reset</button>
+      </div>
+      <div class="btn-row full">
+        <button class="btn primary" id="auto-btn">▶ Auto-play full cycle</button>
+      </div>
+
+      <div class="recipe">
+        <strong>Recipe:</strong> top half is the V7 <code>ConductorStage</code> SwiftUI component (one composite view). Bottom half is V5's existing <code>turnCard</code> with a new <code>ProvenanceTrail</code> sub-view (<code>UA → M → ES</code> + timestamp + latency). Both share the same <code>BridgeCyclePhase</code> enum from <code>BridgeSessionManager</code>.
+      </div>
+
+      <div class="legend">
+        <h4>From V7 (top)</h4>
+        <div class="legend-row"><span class="legend-tag">flow→ / ←</span>Dataflow dots between endpoint and M animate direction of meaning</div>
+        <div class="legend-row"><span class="legend-tag">orbit</span>3 orbiting dots around M while translating</div>
+        <div class="legend-row"><span class="legend-tag">halo</span>Forest-green glow behind M intensifies during thinking</div>
+        <h4 style="margin-top:16px">From V5 (bottom)</h4>
+        <div class="legend-row"><span class="legend-tag">provenance</span><code>UA → M → ES</code> mono-trail above each card</div>
+        <div class="legend-row"><span class="legend-tag">side</span>UA turns left-aligned, ES turns right-aligned, with 36pt opposite-side padding</div>
+        <div class="legend-row"><span class="legend-tag">card</span>Source (body-emphasis) + hairline + translation (muted body)</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const conductor = document.getElementById('conductor');
+const mLabel = document.getElementById('m-label');
+const flowLeft = document.getElementById('flow-left');
+const flowRight = document.getElementById('flow-right');
+const endpointUA = document.getElementById('endpoint-ua');
+const endpointES = document.getElementById('endpoint-es');
+const stateUA = document.getElementById('state-ua');
+const stateES = document.getElementById('state-es');
+const caption = document.getElementById('caption');
+const captionSource = document.getElementById('caption-source');
+const captionText = document.getElementById('caption-text');
+const phaseReadout = document.getElementById('phase-readout');
+const archive = document.getElementById('archive');
+
+const TURNS = [
+  {
+    src: 'ua', srcFlag: '🇺🇦', srcCode: 'UA',
+    srcPartial: 'Привіт, як справи..',
+    srcText: 'Привіт, як справи сьогодні?',
+    tgt: 'es', tgtFlag: '🇪🇸', tgtCode: 'ES',
+    tgtPartial: 'Hola, ¿cómo estás..',
+    tgtText: 'Hola, ¿cómo estás hoy?',
+    timestamp: '02:47', latency: '0.8s',
+  },
+  {
+    src: 'es', srcFlag: '🇪🇸', srcCode: 'ES',
+    srcPartial: 'Bien, gracias..',
+    srcText: 'Bien, gracias. ¿Y tú?',
+    tgt: 'ua', tgtFlag: '🇺🇦', tgtCode: 'UA',
+    tgtPartial: 'Добре, дякую..',
+    tgtText: 'Добре, дякую. А ти?',
+    timestamp: '02:53', latency: '0.6s',
+  },
+  {
+    src: 'ua', srcFlag: '🇺🇦', srcCode: 'UA',
+    srcPartial: 'Я хотів запитати..',
+    srcText: 'Я хотів запитати про лікаря.',
+    tgt: 'es', tgtFlag: '🇪🇸', tgtCode: 'ES',
+    tgtPartial: 'Quería preguntar..',
+    tgtText: 'Quería preguntar sobre el médico.',
+    timestamp: '03:01', latency: '0.7s',
+  },
+];
+
+let idx = 0;
+let autoTimer = null;
+
+function setEndpoint(side, isActive, stateText) {
+  const ep = side === 'ua' ? endpointUA : endpointES;
+  const st = side === 'ua' ? stateUA : stateES;
+  ep.classList.toggle('is-active', isActive);
+  st.textContent = stateText;
+}
+function setFlow(side, on, reverse = false) {
+  const f = side === 'left' ? flowLeft : flowRight;
+  f.classList.toggle('is-active', on);
+  f.classList.toggle('is-reverse', !!reverse);
+}
+function setM(state) {
+  conductor.classList.remove('is-thinking');
+  if (state === 'thinking') { conductor.classList.add('is-thinking'); mLabel.textContent = 'translating…'; }
+  else if (state === 'speaking') { mLabel.textContent = 'speaking out'; }
+  else if (state === 'listening') { mLabel.textContent = 'listening'; }
+  else { mLabel.textContent = 'ready'; }
+}
+function setCaption(source, text, partial) {
+  caption.classList.toggle('is-empty', !text);
+  captionSource.innerHTML = source || '&nbsp;';
+  captionText.textContent = text || 'Хтось має тапнути мікрофон щоб почати';
+  captionText.classList.toggle('partial', !!partial);
+}
+function setPhase(p) {
+  phaseReadout.textContent = `phase: ${p}`;
+}
+
+function pushCard(turn) {
+  // UA-sourced turns go LEFT (left-aligned), ES-sourced go RIGHT (right-aligned)
+  const isLeft = turn.src === 'ua';
+  const card = document.createElement('div');
+  card.className = `turn-card ${isLeft ? 'left' : 'right'}`;
+  card.innerHTML = `
+    <div class="provenance">
+      <span>${turn.srcCode} → M → ${turn.tgtCode}</span>
+      <span class="timestamp">${turn.timestamp} · ${turn.latency}</span>
+    </div>
+    <div class="turn-source">${turn.srcText}</div>
+    <div class="turn-divider"></div>
+    <div class="turn-target">${turn.tgtText}<button class="copy-btn" title="Copy translation">⎘</button></div>
+  `;
+  const copyBtn = card.querySelector('.copy-btn');
+  copyBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    copyToClipboard(turn.tgtText);
+    copyBtn.classList.add('is-copied');
+    copyBtn.textContent = '✓';
+    setTimeout(() => {
+      copyBtn.classList.remove('is-copied');
+      copyBtn.textContent = '⎘';
+    }, 1200);
+    log('ui', `copied translation: "${turn.tgtText.slice(0, 32)}…"`);
+  });
+  archive.appendChild(card);
+  archive.scrollTop = archive.scrollHeight;
+}
+
+function copyToClipboard(text) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); } catch (e) {}
+  document.body.removeChild(ta);
+}
+
+function step(name) {
+  const turn = TURNS[idx % TURNS.length];
+
+  switch (name) {
+    case 'ua-start': {
+      const isUASrc = turn.src === 'ua';
+      setEndpoint('ua', isUASrc, isUASrc ? 'speaking' : 'idle');
+      setEndpoint('es', !isUASrc, !isUASrc ? 'speaking' : 'idle');
+      setFlow('left', isUASrc, false);
+      setFlow('right', !isUASrc, true);
+      setM('listening');
+      setCaption(`${turn.srcFlag} ${turn.srcCode}`, turn.srcPartial, true);
+      setPhase(`source_listening (${turn.src})`);
+      break;
+    }
+    case 'ua-stop': {
+      const isUASrc = turn.src === 'ua';
+      setEndpoint('ua', false, isUASrc ? 'done' : 'idle');
+      setEndpoint('es', false, !isUASrc ? 'done' : 'idle');
+      setFlow('left', false);
+      setFlow('right', false);
+      setCaption(`${turn.srcFlag} ${turn.srcCode}`, turn.srcText, false);
+      setM('ready');
+      setPhase('source_finished');
+      break;
+    }
+    case 'm-translate': {
+      setM('thinking');
+      setPhase('translating');
+      break;
+    }
+    case 'es-play': {
+      const isESTarget = turn.tgt === 'es';
+      setEndpoint('es', isESTarget, isESTarget ? 'hearing' : 'idle');
+      setEndpoint('ua', !isESTarget, !isESTarget ? 'hearing' : 'idle');
+      setFlow('right', isESTarget, false);
+      setFlow('left', !isESTarget, true);
+      setM('speaking');
+      setCaption(`${turn.tgtFlag} ${turn.tgtCode}`, turn.tgtPartial, true);
+      setTimeout(() => setCaption(`${turn.tgtFlag} ${turn.tgtCode}`, turn.tgtText, false), 600);
+      setPhase(`target_speaking (${turn.tgt})`);
+      break;
+    }
+    case 'done': {
+      setEndpoint('ua', false, 'idle');
+      setEndpoint('es', false, 'idle');
+      setFlow('left', false);
+      setFlow('right', false);
+      setM('ready');
+      pushCard(turn);
+      idx++;
+      setCaption('', '');
+      setPhase('idle');
+      break;
+    }
+    case 'reset': {
+      idx = 0;
+      archive.innerHTML = '';
+      setEndpoint('ua', false, 'idle');
+      setEndpoint('es', false, 'idle');
+      setFlow('left', false);
+      setFlow('right', false);
+      setM('ready');
+      setCaption('', '');
+      setPhase('idle');
+      stopAuto();
+      break;
+    }
+  }
+}
+
+document.querySelectorAll('.btn[data-step]').forEach(btn => {
+  btn.addEventListener('click', () => step(btn.dataset.step));
+});
+
+function autoCycle() {
+  const seq = ['ua-start', 'ua-stop', 'm-translate', 'es-play', 'done'];
+  const delays = [1500, 1800, 1200, 1700, 1500];
+  let i = 0;
+  function next() {
+    if (!autoTimer) return;
+    step(seq[i % seq.length]);
+    i++;
+    autoTimer = setTimeout(next, delays[(i - 1) % delays.length]);
+  }
+  next();
+}
+function startAuto() {
+  if (autoTimer) return;
+  document.getElementById('auto-btn').textContent = '■ Stop';
+  autoTimer = true;
+  autoCycle();
+}
+function stopAuto() {
+  if (!autoTimer) return;
+  if (typeof autoTimer !== 'boolean') clearTimeout(autoTimer);
+  autoTimer = null;
+  document.getElementById('auto-btn').textContent = '▶ Auto-play full cycle';
+}
+document.getElementById('auto-btn').addEventListener('click', () => {
+  if (autoTimer) stopAuto(); else startAuto();
+});
+
+// ============ LANGUAGE PICKER ============
+const LANGS = [
+  {code: 'UA', flag: '🇺🇦'},
+  {code: 'EN', flag: '🇬🇧'},
+  {code: 'ES', flag: '🇪🇸'},
+  {code: 'PT', flag: '🇵🇹'},
+  {code: 'FR', flag: '🇫🇷'},
+  {code: 'DE', flag: '🇩🇪'},
+  {code: 'IT', flag: '🇮🇹'},
+  {code: 'JA', flag: '🇯🇵'},
+  {code: 'ZH', flag: '🇨🇳'},
+  {code: 'KO', flag: '🇰🇷'},
+  {code: 'RU', flag: '🇷🇺'},
+];
+const SIDES = ['ua', 'es'];
+const sideCurrent = { ua: 'UA', es: 'ES' };
+
+function buildPicker(side) {
+  const picker = document.getElementById(`picker-${side}`);
+  picker.innerHTML = '';
+  LANGS.forEach(lang => {
+    const item = document.createElement('div');
+    item.className = 'lang-picker-item';
+    if (lang.code === sideCurrent[side]) item.classList.add('selected');
+    item.innerHTML = `<span class="picker-flag">${lang.flag}</span><span class="picker-code">${lang.code}</span>`;
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectLang(side, lang);
+      closeAllPickers();
+    });
+    picker.appendChild(item);
+  });
+}
+function selectLang(side, lang) {
+  sideCurrent[side] = lang.code;
+  document.getElementById(`flag-${side}`).textContent = lang.flag;
+  document.getElementById(`code-${side}`).textContent = lang.code;
+}
+function openPicker(side) {
+  closeAllPickers();
+  buildPicker(side);
+  document.getElementById(`picker-${side}`).classList.add('is-open');
+}
+function closeAllPickers() {
+  SIDES.forEach(s => document.getElementById(`picker-${s}`).classList.remove('is-open'));
+}
+document.querySelectorAll('.endpoint-card[data-side]').forEach(card => {
+  card.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openPicker(card.dataset.side);
+  });
+});
+// Flag is now also clickable — opens the picker for its side
+document.getElementById('flag-ua').addEventListener('click', (e) => {
+  e.stopPropagation();
+  openPicker('ua');
+});
+document.getElementById('flag-es').addEventListener('click', (e) => {
+  e.stopPropagation();
+  openPicker('es');
+});
+document.addEventListener('click', closeAllPickers);
+
+// ============ LOGS TOOLBOX ============
+const logsEl = document.getElementById('logs');
+const logsHeader = document.getElementById('logs-header');
+const logsBody = document.getElementById('logs-body');
+const logsCount = document.getElementById('logs-count');
+const logsCaret = document.getElementById('logs-caret');
+const logsCopyBtn = document.getElementById('logs-copy-btn');
+const logsClearBtn = document.getElementById('logs-clear-btn');
+const logEntries = [];
+
+function log(tag, message) {
+  const now = new Date();
+  const ts = String(now.getHours()).padStart(2, '0') + ':' +
+             String(now.getMinutes()).padStart(2, '0') + ':' +
+             String(now.getSeconds()).padStart(2, '0');
+  logEntries.push({ ts, tag, message });
+  renderLogs();
+}
+function renderLogs() {
+  logsCount.textContent = logEntries.length;
+  if (logEntries.length === 0) {
+    logsBody.innerHTML = '<div class="logs-empty">No events yet. Trigger a step to populate.</div>';
+    return;
+  }
+  logsBody.innerHTML = logEntries.slice(-30).map(e =>
+    `<div class="logs-entry"><span class="ts">${e.ts}</span><span class="tag">[${e.tag}]</span><span>${e.message}</span></div>`
+  ).join('');
+  logsBody.scrollTop = logsBody.scrollHeight;
+}
+function toggleLogs() {
+  logsEl.classList.toggle('is-open');
+  logsCaret.textContent = logsEl.classList.contains('is-open') ? '▾' : '▸';
+}
+logsHeader.addEventListener('click', (e) => {
+  // Don't toggle if click landed on a button
+  if (e.target.closest('button')) return;
+  toggleLogs();
+});
+logsCopyBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const text = logEntries.map(en => `${en.ts} [${en.tag}] ${en.message}`).join('\n');
+  copyToClipboard(text);
+  logsCopyBtn.classList.add('is-copied');
+  logsCopyBtn.textContent = '✓ Copied';
+  setTimeout(() => {
+    logsCopyBtn.classList.remove('is-copied');
+    logsCopyBtn.textContent = '⎘ Copy';
+  }, 1200);
+});
+logsClearBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  logEntries.length = 0;
+  renderLogs();
+});
+
+// Hook log() into every step + picker action
+const _origStep = step;
+step = function(name) {
+  log('rtc', `event → ${name}`);
+  _origStep(name);
+};
+const _origSelectLang = selectLang;
+selectLang = function(side, lang) {
+  _origSelectLang(side, lang);
+  log('ui', `side ${side.toUpperCase()} → ${lang.code} ${lang.flag}`);
+};
+// Re-bind step buttons to use the wrapped step()
+document.querySelectorAll('.btn[data-step]').forEach(btn => {
+  const newBtn = btn.cloneNode(true);
+  btn.parentNode.replaceChild(newBtn, btn);
+  newBtn.addEventListener('click', () => step(newBtn.dataset.step));
+});
+
+// Init
+log('app', 'demo loaded · gpt-realtime-translate stub');
+</script>
+</body>
+</html>

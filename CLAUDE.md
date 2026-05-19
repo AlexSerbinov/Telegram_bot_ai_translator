@@ -1,4 +1,31 @@
-# AI Translator — Cloud & Deployment
+# Teycan Translate — Monorepo Guide
+
+This repo (`github.com/AlexSerbinov/teycan-translate`) is a **monorepo** for
+the whole product:
+
+```
+teycan-translate/
+├── src/                       ← backend (Express + Telegram bot + Mini App)
+├── scripts/                   ← backend dev scripts
+├── docs/                      ← backend docs (design specs, briefs)
+├── ios/                       ← iOS app (SwiftUI, subtree-merged 2026-05-19)
+│   ├── TeycanTranslate/       ← Xcode project (xcodegen-managed)
+│   ├── CLAUDE.md              ← iOS-specific build / deploy guide
+│   └── WORKFLOW.md
+├── .github/workflows/deploy.yml  ← backend CI/CD only
+├── package.json               ← backend deps (npm)
+└── CLAUDE.md                  ← this file (project-wide)
+```
+
+Backend deploy still triggers only on `push to main`, runs `npm install` in
+the root, ignores `ios/` entirely. iOS is deployed manually via
+`xcrun devicectl` (see `ios/CLAUDE.md`).
+
+The former `teycan-translate-ios` repo is **archived** — all its source
+history is preserved as one squash-commit (`Squashed 'ios/' content from
+commit c7bafe5`). Any future iOS work happens here.
+
+
 
 ## Communication language (with the user, in chat)
 

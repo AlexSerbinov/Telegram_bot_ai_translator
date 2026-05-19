@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>Bridge Redesign — Demos</title>
+<style>
+  :root {
+    --bg-canvas: #0A0A0A;
+    --bg-surface: #161616;
+    --bg-surface-2: #1F1F1F;
+    --text-ink: #FAFAFA;
+    --text-muted: #A3A3A3;
+    --text-subtle: #525252;
+    --accent: #3D8A6A;
+    --hairline: #262626;
+    --hairline-strong: #404040;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg-canvas);
+    color: var(--text-ink);
+    font-family: -apple-system, "SF Pro Display", BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    padding: 64px 32px;
+  }
+  h1 {
+    font-size: 40px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin: 0 0 12px;
+  }
+  .eyebrow {
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 48px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 24px;
+    max-width: 1200px;
+  }
+  .card {
+    background: var(--bg-surface);
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    padding: 24px;
+    text-decoration: none;
+    color: var(--text-ink);
+    transition: border-color 0.2s, transform 0.2s;
+    display: block;
+  }
+  .card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .card h2 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0 0 6px;
+  }
+  .card .tag {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .card p {
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 22px;
+    margin: 0;
+  }
+  .card .meta {
+    display: flex;
+    gap: 16px;
+    margin-top: 16px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--text-subtle);
+    letter-spacing: 0.1em;
+  }
+  .meta span::before {
+    content: "·";
+    margin-right: 6px;
+  }
+  .meta span:first-child::before { content: none; }
+  footer {
+    margin-top: 64px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--text-subtle);
+    letter-spacing: 0.1em;
+  }
+</style>
+</head>
+<body>
+  <div class="eyebrow">Teycan Translate · Bridge Redesign</div>
+  <h1>Realtime Demos</h1>
+  <div class="grid">
+    <a href="./v9-hybrid.html" class="card" style="border-color: var(--accent);">
+      <div class="tag" style="color: var(--accent);">★ V9 · Hybrid — Recommended</div>
+      <h2>Conductor + Provenance Cards</h2>
+      <p>The chosen combo: V7's cinematic conductor stage (animated dataflow + orbiting M) on top, V5's alternating provenance cards (<code style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">UA → M → ES</code>) below. Best of both worlds.</p>
+      <div class="meta"><span>8/10 feasible</span><span>3–5 days</span><span>V7 stage + V5 cards</span></div>
+    </a>
+    <a href="./v5-zhyva-tryada.html" class="card">
+      <div class="tag">V5 · Live Triad</div>
+      <h2>Жива тріада</h2>
+      <p>Three actor pills locked at top. Each capsule has 5 live states (idle / speaking / finished / thinking / playing) wired to gpt-realtime events. Archive accumulates below.</p>
+      <div class="meta"><span>9/10 feasible</span><span>2–3 days</span><span>Evolution of V1</span></div>
+    </a>
+    <a href="./v7-dyryhent.html" class="card">
+      <div class="tag">V7 · Conductor</div>
+      <h2>Диригент</h2>
+      <p>M as the central character. Two endpoints with animated dataflow dots between them and M. Caption box centered, whirling M during translation phase.</p>
+      <div class="meta"><span>8/10 feasible</span><span>5–7 days</span><span>Cinematic</span></div>
+    </a>
+    <a href="./v8-audio-riky.html" class="card" style="opacity: 0.5;">
+      <div class="tag">V8 · Audio Rivers (declined)</div>
+      <h2>Аудіо-ріки</h2>
+      <p>Two horizontal waveform streams + rolling captions. Source RMS from PCMStreamRecorder; target waveform synthetic (real PCM not exposed by WebRTC).</p>
+      <div class="meta"><span>5/10 feasible</span><span>2+ weeks</span><span>Bold + radical</span></div>
+    </a>
+  </div>
+  <footer>Use the demo controls at the bottom of each page to step through the realtime cycle manually, or hit "Auto" to watch a full conversation play out.</footer>
+</body>
+</html>

@@ -4,6 +4,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+
 # Environment variables
 .env
 .env.local
@@ -132,12 +133,13 @@ public
 # Temporary folders
 tmp/
 temp/ 
-# iOS app — separate private repo: AlexSerbinov/teycan-translate-ios
-# Both `ios/` (active workspace) and `ios-stable/` (last-good snapshot) live
-# outside this repo. Includes their build artefacts (build/, build-sim/,
-# xcodeproj, derived data) so nothing iOS-related leaks into the backend repo.
-ios/
+# iOS app — now lives in this monorepo under `ios/` (subtree-merged from the
+# former teycan-translate-ios repo, 2026-05-19). Build artefacts inside
+# `ios/` are handled by `ios/.gitignore` (build/, build-*/, DerivedData/).
+# `ios-stable/` was an old detached snapshot — kept out so we don't duplicate
+# Xcode output here.
 ios-stable/
 
 # Local scratch — screenshots, drafts, anything one-off
 image.png
+logs/
