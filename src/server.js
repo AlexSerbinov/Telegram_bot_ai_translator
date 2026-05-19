@@ -9,6 +9,7 @@ const geminiService = require('./services/geminiService');
 const groqService = require('./services/groqService');
 const databaseService = require('./services/databaseService');
 const { attachLiveWs } = require('./liveTranslator');
+const { SonioxTtsSession, SAMPLE_RATE: SONIOX_TTS_SR } = require('./liveTranslator/ttsSoniox');
 const { verifyAppleIdentityToken, issueAppJWT } = require('./services/appleAuthService');
 const { requireAuth } = require('./middleware/auth');
 const User = require('./models/User');
@@ -21,6 +22,87 @@ const LANG_NAMES = {
   pl: 'Polish', tr: 'Turkish', nl: 'Dutch', cs: 'Czech',
   ja: 'Japanese', zh: 'Chinese', ar: 'Arabic',
 };
+
+// One-shot Soniox TTS: opens a WS sub-stream, collects PCM s16le frames,
+// returns a finished WAV buffer. Used by POST /api/tts when the iOS Phrase
+// tab selects Soniox as the TTS provider.
+async function synthesizeSonioxWav({ text, language }) {
+  const session = new SonioxTtsSession({
+    apiKey: config.soniox.ttsApiKey,
+    model: config.soniox.ttsModel,
+    voice: config.soniox.ttsVoice,
+    language,
+  });
+
+  await session.open();
+
+  const pcmChunks = [];
+  let settled = false;
+
+  return await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { session.close(); } catch {}
+      reject(new Error('Soniox TTS timeout (20s)'));
+    }, 20_000);
+
+    const finish = (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      try { session.close(); } catch {}
+      if (err) return reject(err);
+      const pcm = Buffer.concat(pcmChunks);
+      resolve(pcmToWav(pcm, SONIOX_TTS_SR));
+    };
+
+    session.on('audio', (buf) => pcmChunks.push(buf));
+    session.on('error', (e) => finish(new Error(e?.message || 'Soniox TTS error')));
+    // Resolve on close — Soniox sends `terminated:true` per sub-stream which
+    // triggers a queue drain; with no further chunks, the session goes idle.
+    // We wait a short tail after the last audio frame before closing ourselves.
+    session.on('closed', () => finish(null));
+
+    session.chunk(text);
+
+    // After queuing the single chunk, close once it drains. Poll until the
+    // active sub-stream finishes — `terminated:true` fires `_drain()` and
+    // `activeStreamId` returns to null, queue is empty → safe to close.
+    const poll = setInterval(() => {
+      if (settled) { clearInterval(poll); return; }
+      if (session.activeStreamId == null && session.queue.length === 0 && pcmChunks.length > 0) {
+        clearInterval(poll);
+        // Give the WS a beat to flush any tail frame before we close.
+        setTimeout(() => finish(null), 50);
+      }
+    }, 50);
+  });
+}
+
+// Build a 44-byte WAV header + PCM body. PCM is signed 16-bit little-endian, mono.
+function pcmToWav(pcm, sampleRate) {
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * bitsPerSample / 8;
+  const blockAlign = numChannels * bitsPerSample / 8;
+  const dataSize = pcm.length;
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + dataSize, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);              // PCM fmt chunk size
+  header.writeUInt16LE(1, 20);               // audio format = PCM
+  header.writeUInt16LE(numChannels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write('data', 36);
+  header.writeUInt32LE(dataSize, 40);
+  return Buffer.concat([header, pcm]);
+}
 
 function createServer() {
   const app = express();
@@ -350,21 +432,116 @@ Translate ONLY the NEW source segment provided by the user, as a natural continu
     }
   });
 
-  // Text-to-Speech via ElevenLabs
+  // OpenAI Realtime voice monitor — conversational gpt-realtime-2 session
+  // with input transcription events enabled. The visible transcript is produced
+  // by the configured ASR attachment; the voice model still consumes the
+  // original audio directly.
+  app.post('/api/realtime-transcription/session', async (req, res) => {
+    try {
+      const {
+        voice = 'marin',
+        instructions = '',
+        inputLanguage = '',
+        roomMode = false,
+        vadThreshold = 0.5,
+        includeLogprobs = true,
+      } = req.body || {};
+
+      if (!config.openaiRealtimeVoice.apiKey) {
+        return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+      }
+
+      const noiseReduction = roomMode ? null : { type: 'near_field' };
+      const threshold = Math.max(0, Math.min(1, Number(vadThreshold) || 0.5));
+
+      const body = {
+        session: {
+          type: 'realtime',
+          model: config.openaiRealtimeVoice.model,
+          audio: {
+            input: {
+              transcription: {
+                model: config.openaiRealtimeVoice.transcriptionModel,
+                ...(inputLanguage ? { language: inputLanguage } : {}),
+              },
+              noise_reduction: noiseReduction,
+              turn_detection: {
+                type: 'server_vad',
+                threshold,
+                prefix_padding_ms: 300,
+                silence_duration_ms: 500,
+              },
+            },
+            output: { voice },
+          },
+          include: includeLogprobs ? ['item.input_audio_transcription.logprobs'] : [],
+          tracing: 'auto',
+          ...(instructions ? { instructions } : {}),
+        },
+      };
+
+      const r = await fetch(config.openaiRealtimeVoice.clientSecretUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.openaiRealtimeVoice.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!r.ok) {
+        const errText = await r.text();
+        logger.error(`[Realtime-Transcription] client_secret ${r.status}: ${errText}`);
+        return res.status(r.status).json({ error: errText });
+      }
+      const data = await r.json();
+      if (!data || typeof data.value !== 'string') {
+        return res.status(502).json({ error: 'OpenAI did not return a client_secret value' });
+      }
+      logger.info(`[Realtime-Transcription] session created (model=${config.openaiRealtimeVoice.model}, transcription=${config.openaiRealtimeVoice.transcriptionModel}, voice=${voice})`);
+      res.json({
+        client_secret: data.value,
+        expires_at: data.expires_at ?? null,
+        model: config.openaiRealtimeVoice.model,
+        transcriptionModel: config.openaiRealtimeVoice.transcriptionModel,
+      });
+    } catch (e) {
+      logger.error('[Realtime-Transcription] session error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Text-to-Speech — provider selectable per-request.
+  //   provider = "elevenlabs" (default) → MP3 via ElevenLabs Turbo v2.5
+  //   provider = "soniox"               → WAV (PCM s16le 24kHz mono) via Soniox TTS WS
+  // iOS Phrase tab exposes this switch in its settings sheet.
   app.post('/api/tts', async (req, res) => {
     try {
-      const { text, language } = req.body;
+      const { text, language, provider: rawProvider } = req.body;
       if (!text) {
         return res.status(400).json({ error: 'Missing required field: text' });
       }
 
+      const provider = (rawProvider || 'elevenlabs').toString().toLowerCase();
+
+      if (provider === 'soniox') {
+        if (!config.soniox.ttsApiKey) {
+          return res.status(500).json({ error: 'Soniox TTS not configured (SONIOX_API_KEY/SONIOX_TTS_API_KEY missing)' });
+        }
+        const wav = await synthesizeSonioxWav({ text, language: language || 'en' });
+        res.set('Content-Type', 'audio/wav');
+        res.set('Content-Length', wav.length);
+        return res.send(wav);
+      }
+
+      // Default: ElevenLabs MP3
       const audioBuffer = await elevenLabsService.textToSpeech(text, language);
       res.set('Content-Type', 'audio/mpeg');
       res.set('Content-Length', audioBuffer.length);
       res.send(audioBuffer);
     } catch (error) {
       logger.error('Error in TTS:', error);
-      res.status(500).json({ error: 'TTS failed' });
+      res.status(500).json({ error: 'TTS failed', message: error?.message || String(error) });
     }
   });
 
@@ -373,6 +550,201 @@ Translate ONLY the NEW source segment provided by the user, as a natural continu
     const { tag, data } = req.body;
     logger.info(`[WEBAPP ${tag || 'DBG'}] ${JSON.stringify(data)}`);
     res.json({ ok: true });
+  });
+
+  // --- iOS / Mini App remote log shipping ------------------------------
+  //
+  // The iOS app's `DiagLogger` ring buffer is only visible inside the app's
+  // own Log panel. To let a developer (or an AI agent) debug live flows
+  // without screen-sharing the phone, the client batches its entries and
+  // POSTs them here every couple of seconds. We keep a small server-side
+  // ring buffer (5k entries) and expose a `GET /api/logs?limit=…` so the
+  // developer can `curl` the latest events.
+  //
+  // No auth: useful during dev. The endpoint MUST NOT be reused for anything
+  // sensitive — anyone with the URL can read them. We strip nothing.
+
+  const LOG_RING_MAX = 5000;
+  const logRing = []; // {ts, deviceID, tag, line}
+  let nextLogSeq = 1;
+
+  app.post('/api/logs', (req, res) => {
+    const { deviceID, entries } = req.body || {};
+    if (!Array.isArray(entries)) {
+      return res.status(400).json({ error: 'entries must be an array' });
+    }
+    const safeDevice = (deviceID || 'unknown').toString().slice(0, 64);
+    for (const e of entries) {
+      const tag = (e?.tag || 'app').toString().slice(0, 24);
+      const line = (e?.line || '').toString().slice(0, 1024);
+      const ts = (e?.ts || Date.now());
+      logRing.push({ seq: nextLogSeq++, ts, deviceID: safeDevice, tag, line });
+      if (logRing.length > LOG_RING_MAX) logRing.shift();
+    }
+    res.json({ ok: true, stored: entries.length, sinceSeq: nextLogSeq });
+  });
+
+  app.get('/api/logs', (req, res) => {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 200, LOG_RING_MAX);
+    const sinceSeq = parseInt(req.query.sinceSeq, 10) || 0;
+    const deviceFilter = req.query.deviceID;
+    const tagFilter = req.query.tag;
+    let filtered = logRing;
+    if (sinceSeq > 0) filtered = filtered.filter(e => e.seq > sinceSeq);
+    if (deviceFilter) filtered = filtered.filter(e => e.deviceID === deviceFilter);
+    if (tagFilter) filtered = filtered.filter(e => e.tag === tagFilter);
+    const slice = filtered.slice(-limit);
+    res.json({ count: slice.length, entries: slice });
+  });
+
+  app.post('/api/logs/clear', (req, res) => {
+    logRing.length = 0;
+    res.json({ ok: true });
+  });
+
+  // --- iOS Voice Log (diarized session transcripts) ---------------------
+  //
+  // A "voice log" entry is one utterance attributed to either a human speaker
+  // (with a Soniox-assigned speaker id) or the model. Bridge sessions stream
+  // these in real time so the server can reconstruct "who said what, when"
+  // for each session — and so the iOS History tab can render past sessions.
+  //
+  // In-memory ring, no auth, capped to last 200 sessions / 50k entries.
+
+  const VOICE_LOG_MAX_ENTRIES = 50000;
+  const VOICE_LOG_MAX_SESSIONS = 200;
+  const voiceLogEntries = []; // {seq, ts, deviceID, sessionID, role, speaker, lang, text}
+  let nextVoiceSeq = 1;
+
+  app.post('/api/voice-log', (req, res) => {
+    const { deviceID, sessionID, entries } = req.body || {};
+    if (!sessionID || typeof sessionID !== 'string') {
+      return res.status(400).json({ error: 'Missing sessionID' });
+    }
+    if (!Array.isArray(entries)) {
+      return res.status(400).json({ error: 'entries must be an array' });
+    }
+    const safeDevice = (deviceID || 'unknown').toString().slice(0, 64);
+    const safeSession = sessionID.toString().slice(0, 64);
+    let stored = 0;
+    for (const e of entries) {
+      const role = ['human', 'model', 'meta'].includes(e?.role) ? e.role : 'human';
+      const text = (e?.text || '').toString().slice(0, 4096);
+      const speaker = e?.speaker ? e.speaker.toString().slice(0, 16) : null;
+      const lang = e?.lang ? e.lang.toString().slice(0, 8) : null;
+      const ts = e?.ts || Date.now();
+      voiceLogEntries.push({
+        seq: nextVoiceSeq++, ts, deviceID: safeDevice, sessionID: safeSession,
+        role, speaker, lang, text,
+      });
+      stored++;
+    }
+    while (voiceLogEntries.length > VOICE_LOG_MAX_ENTRIES) voiceLogEntries.shift();
+    res.json({ ok: true, stored, sinceSeq: nextVoiceSeq });
+  });
+
+  app.get('/api/voice-log/sessions', (req, res) => {
+    const deviceFilter = req.query.deviceID;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, VOICE_LOG_MAX_SESSIONS);
+    const bySession = new Map();
+    for (const e of voiceLogEntries) {
+      if (deviceFilter && e.deviceID !== deviceFilter) continue;
+      let s = bySession.get(e.sessionID);
+      if (!s) {
+        s = { sessionID: e.sessionID, deviceID: e.deviceID, startedAt: e.ts, endedAt: e.ts, entryCount: 0 };
+        bySession.set(e.sessionID, s);
+      }
+      s.endedAt = Math.max(s.endedAt, e.ts);
+      s.startedAt = Math.min(s.startedAt, e.ts);
+      s.entryCount += 1;
+    }
+    const fs = require('fs-extra');
+    const path = require('path');
+    const dir = path.join(__dirname, '..', 'data', 'recordings');
+    const sessionsList = Array.from(bySession.values())
+      .sort((a, b) => b.endedAt - a.endedAt)
+      .slice(0, limit)
+      .map(s => {
+        const wav = path.join(dir, `${s.sessionID}.wav`);
+        const hasRecording = fs.existsSync(wav);
+        return { ...s, recordingFile: hasRecording ? `/api/recordings/${s.sessionID}.wav` : null };
+      });
+    res.json({ count: sessionsList.length, sessions: sessionsList });
+  });
+
+  app.get('/api/voice-log/sessions/:sessionID', (req, res) => {
+    const { sessionID } = req.params;
+    const deviceFilter = req.query.deviceID;
+    const entries = voiceLogEntries.filter(e => {
+      if (e.sessionID !== sessionID) return false;
+      if (deviceFilter && e.deviceID !== deviceFilter) return false;
+      return true;
+    });
+    if (entries.length === 0) return res.status(404).json({ error: 'Session not found' });
+    const fs = require('fs-extra');
+    const path = require('path');
+    const wav = path.join(__dirname, '..', 'data', 'recordings', `${sessionID}.wav`);
+    const recordingFile = fs.existsSync(wav) ? `/api/recordings/${sessionID}.wav` : null;
+    res.json({
+      sessionID,
+      deviceID: entries[0].deviceID,
+      startedAt: entries[0].ts,
+      endedAt: entries[entries.length - 1].ts,
+      recordingFile,
+      entries: entries.map(e => ({ ts: e.ts, role: e.role, speaker: e.speaker, lang: e.lang, text: e.text })),
+    });
+  });
+
+  app.post('/api/voice-log/clear', (req, res) => {
+    voiceLogEntries.length = 0;
+    res.json({ ok: true });
+  });
+
+  // --- iOS Recordings (WAV upload + playback for voice-log sessions) ----
+  //
+  // POST /api/recordings?sessionID=…&deviceID=…&label=…
+  //   Body: raw WAV bytes (Content-Type: audio/wav). Saved to
+  //   data/recordings/{sessionID}.wav so the voice-log endpoints can link it.
+  //
+  // GET /api/recordings/:filename — streams the WAV back for playback.
+
+  app.post('/api/recordings',
+    express.raw({ type: 'audio/*', limit: '50mb' }),
+    async (req, res) => {
+      const fs = require('fs-extra');
+      const path = require('path');
+      try {
+        if (!req.body || !req.body.length) {
+          return res.status(400).json({ error: 'Empty body' });
+        }
+        const sessionID = (req.query.sessionID || '').toString().slice(0, 64);
+        const label = (req.query.label || 'session').toString().slice(0, 32);
+        const dir = path.join(__dirname, '..', 'data', 'recordings');
+        await fs.ensureDir(dir);
+        const filename = sessionID
+          ? `${sessionID}.wav`
+          : `${label}-${Date.now()}.wav`;
+        const filepath = path.join(dir, filename);
+        await fs.writeFile(filepath, req.body);
+        logger.info(`[Recordings] saved ${filename} (${req.body.length} bytes)`);
+        res.json({ url: `/api/recordings/${filename}`, bytes: req.body.length });
+      } catch (e) {
+        logger.error('[Recordings] save failed:', e);
+        res.status(500).json({ error: e.message });
+      }
+    }
+  );
+
+  app.get('/api/recordings/:filename', (req, res) => {
+    const path = require('path');
+    const filename = req.params.filename;
+    if (!/^[A-Za-z0-9._-]+\.wav$/.test(filename)) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    const filepath = path.join(__dirname, '..', 'data', 'recordings', filename);
+    res.sendFile(filepath, err => {
+      if (err && !res.headersSent) res.status(404).json({ error: 'Not found' });
+    });
   });
 
   // Get user language config
@@ -739,6 +1111,7 @@ function startServer() {
     logger.info(`⚡ Live translator: ${config.server.webappUrl}/webapp/live.html`);
     logger.info(`🌍 Palabra demo:   ${config.server.webappUrl}/webapp/palabra.html`);
     logger.info(`🤖 OpenAI Realtime: ${config.server.webappUrl}/webapp/realtime.html`);
+    logger.info(`📝 Realtime transcript: ${config.server.webappUrl}/webapp/realtime-transcription.html`);
     logger.info(`🔌 TTS WS proxy: /ws/tts`);
     logger.info(`🚀 Live engine WS: /ws/live`);
   });

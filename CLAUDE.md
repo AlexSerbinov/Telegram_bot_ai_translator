@@ -1,5 +1,56 @@
 # AI Translator — Cloud & Deployment
 
+## Communication language (with the user, in chat)
+
+**Always reply to the user in Ukrainian in this project.** This is a project-level
+override of the user's global English-default working language. All chat
+explanations, status updates, questions, and end-of-turn summaries go in
+Ukrainian. `SHORT_OUTPUT` and `WATCH` also in Ukrainian (existing rules apply).
+
+What stays English (do NOT translate):
+- Code, comments, commit messages, PR descriptions, git branch names
+- File paths, code identifiers, CLI commands, model IDs (`gpt-realtime`,
+  `Endpoints.OpenAI.calls`, `/api/voice-log`, etc.)
+- DESIGN.md, technical docs already in English
+- This CLAUDE.md and other repo docs
+
+Do NOT auto-nudge the user toward English in this project. The global
+"soft nudge" rule from `~/.claude/CLAUDE.md` is overridden here.
+
+## Cross-stack tasks (iOS ↔ backend)
+
+Many tasks in this project touch **both** the SwiftUI iOS app and the
+Express backend. The iOS app is the *client* — it ships UI changes and
+wiring; the backend is what those wires connect to. A request that looks
+like "add an iOS setting" almost always means there's a corresponding API
+contract to update on the server.
+
+**Default expectation when you pick up any task here:**
+
+1. **Audit both sides before coding.** Read the relevant iOS files
+   (`ios/TeycanTranslate/Sources/...`) *and* the backend handler
+   (`src/server.js`, `src/services/*`). Decide whether the change is
+   iOS-only, backend-only, or both — and say so to the user before
+   starting.
+2. **If both sides are affected, implement both in the same session.**
+   Don't ship a half-task where the iOS UI selects an option the backend
+   silently ignores (this happened once — Phrase TTS provider selector
+   was iOS-only at first, so picking "Soniox" kept playing ElevenLabs).
+3. **Redeploy the backend when its code changed.** The iOS app on a
+   physical iPhone defaults to the production backend at
+   `https://89-167-19-222.sslip.io` (see `Endpoints.swift`), so backend
+   work without deploy = no observable change. Either ask the user to
+   merge to `main` (CI auto-deploys), or `gh workflow run` after the
+   merge. Don't tell the user "done" until the new endpoint is live
+   *and* you've smoke-tested it (e.g. `curl` the endpoint, check the
+   response type).
+4. **iOS-only tasks redeploy via `xcrun devicectl`** — no backend touch.
+   Backend-only tasks don't need an iOS rebuild.
+
+This rule applies to *all* future work in this repo. When you spot a
+task that could be misclassified (user says "iOS thing" but the API
+contract has to change too), call it out up front instead of assuming.
+
 ## Architecture
 
 ```

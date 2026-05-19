@@ -133,4 +133,11 @@ public
 tmp/
 temp/ 
 # iOS app — separate private repo: AlexSerbinov/teycan-translate-ios
+# Both `ios/` (active workspace) and `ios-stable/` (last-good snapshot) live
+# outside this repo. Includes their build artefacts (build/, build-sim/,
+# xcodeproj, derived data) so nothing iOS-related leaks into the backend repo.
 ios/
+ios-stable/
+
+# Local scratch — screenshots, drafts, anything one-off
+image.png
