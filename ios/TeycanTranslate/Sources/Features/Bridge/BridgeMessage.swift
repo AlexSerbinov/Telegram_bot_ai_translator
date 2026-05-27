@@ -26,44 +26,6 @@ struct BridgeMessage: Identifiable, Equatable {
     }
 }
 
-/// Lightweight script-based language guesser for Bridge bubbles. Returns the
-/// code of whichever Bridge side (`langA` / `langB`) is the better match —
-/// Cyrillic text → the Cyrillic side, Spanish-flavoured text → the Spanish
-/// side, otherwise the longer-text side wins. Good enough for UA↔ES,
-/// UA↔EN, UA↔PT, ES↔EN. Falls back to `langA` when the text is empty.
-enum BridgeLanguageGuesser {
-    static func guess(text: String, langA: String, langB: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return langA }
-
-        let cyrillicCount = trimmed.unicodeScalars.reduce(0) { acc, scalar in
-            (0x0400...0x04FF).contains(scalar.value) ? acc + 1 : acc
-        }
-        let cyrillicShare = Double(cyrillicCount) / Double(max(trimmed.unicodeScalars.count, 1))
-
-        let aCyrillic = isCyrillicLanguage(langA)
-        let bCyrillic = isCyrillicLanguage(langB)
-
-        if cyrillicShare > 0.3 {
-            if aCyrillic { return langA }
-            if bCyrillic { return langB }
-        } else {
-            // Latin text — Spanish wins over English/other if the message
-            // contains Spanish-specific punctuation/diacritics.
-            let spanishHints: Set<Character> = ["ñ", "Ñ", "¿", "¡", "á", "é", "í", "ó", "ú", "ü"]
-            let looksSpanish = trimmed.contains(where: { spanishHints.contains($0) })
-            if looksSpanish {
-                if langA == "es" { return langA }
-                if langB == "es" { return langB }
-            }
-            // Default: whichever side is NOT Cyrillic.
-            if aCyrillic && !bCyrillic { return langB }
-            if bCyrillic && !aCyrillic { return langA }
-        }
-        return langA
-    }
-
-    private static func isCyrillicLanguage(_ code: String) -> Bool {
-        ["uk", "ru", "bg", "sr", "be", "mk"].contains(code)
-    }
-}
+/// Legacy alias — the actual implementation now lives in the shared
+/// `LanguageGuesser` so Relay can reuse it without depending on Bridge.
+typealias BridgeLanguageGuesser = LanguageGuesser

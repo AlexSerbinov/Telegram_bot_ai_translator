@@ -37,7 +37,11 @@ enum Endpoints {
     static var realtimeSession: URL { baseURL.appending(path: "api/realtime/session") }
     static var realtimeChatSession: URL { baseURL.appending(path: "api/realtime-chat/session") }
     static var translateAuto: URL { baseURL.appending(path: "api/translate-auto") }
+    static var translateFast: URL { baseURL.appending(path: "api/translate-fast") }
+    static var translateFastStream: URL { baseURL.appending(path: "api/translate-fast-stream") }
+    static var relayCompleteness: URL { baseURL.appending(path: "api/relay/completeness") }
     static var tts: URL { baseURL.appending(path: "api/tts") }
+    static var ttsQuota: URL { baseURL.appending(path: "api/tts-quota") }
     static var token: URL { baseURL.appending(path: "api/token") }
     static var voiceTranscribe: URL { baseURL.appending(path: "api/voice/transcribe") }
     static var logs: URL { baseURL.appending(path: "api/logs") }

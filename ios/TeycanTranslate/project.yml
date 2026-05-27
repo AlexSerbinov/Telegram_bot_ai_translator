@@ -36,6 +36,8 @@ targets:
       - path: Resources/Fonts
         type: group
       - path: Resources/Assets.xcassets
+      - path: Resources/Sounds/Earcons
+        type: group
     dependencies:
       - package: WebRTC
         product: WebRTC
@@ -50,6 +52,8 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UIRequiresFullScreen: true
+        UIBackgroundModes:
+          - audio
         NSMicrophoneUsageDescription: >-
           Teycan Translate потребує доступ до мікрофона, щоб перекладати ваше
           мовлення в реальному часі.

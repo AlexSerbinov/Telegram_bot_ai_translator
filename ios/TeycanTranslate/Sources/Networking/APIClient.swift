@@ -123,17 +123,105 @@ actor APIClient {
         )
     }
 
+    /// Relay tab — direct Groq translate with caller-decided from/to direction.
+    /// Server proxies to `openai/gpt-oss-120b` so the Groq API key never
+    /// leaves the backend.
+    func translateFast(text: String, from: String, to: String) async throws -> TranslateFastResponse {
+        try await postJSON(
+            url: Endpoints.translateFast,
+            body: TranslateFastRequest(text: text, fromLanguage: from, toLanguage: to)
+        )
+    }
+
+    /// Relay tab — streaming version of `translateFast`. Yields each Groq
+    /// content delta as it arrives via SSE, so the UI can render the
+    /// translation word-by-word instead of waiting for the whole sentence.
+    /// Errors mid-stream cause the AsyncStream to finish-with-error.
+    nonisolated func translateFastStream(text: String, from: String, to: String) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            let workTask = Task {
+                do {
+                    var req = URLRequest(url: Endpoints.translateFastStream)
+                    req.httpMethod = "POST"
+                    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                    req.timeoutInterval = 30
+                    let body = TranslateFastRequest(text: text, fromLanguage: from, toLanguage: to)
+                    req.httpBody = try JSONEncoder().encode(body)
+
+                    let (bytes, response) = try await URLSession.shared.bytes(for: req)
+                    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                        throw APIError.httpStatus((response as? HTTPURLResponse)?.statusCode ?? -1, body: "")
+                    }
+                    for try await line in bytes.lines {
+                        if Task.isCancelled { break }
+                        // SSE lines: "data: {...json...}" — ignore "event:" / blank lines.
+                        guard line.hasPrefix("data: ") else { continue }
+                        let raw = line.dropFirst(6)
+                        if raw == "[DONE]" { break }
+                        guard let data = raw.data(using: .utf8),
+                              let chunk = try? JSONDecoder().decode(TranslateStreamChunk.self, from: data),
+                              !chunk.delta.isEmpty
+                        else { continue }
+                        continuation.yield(chunk.delta)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in workTask.cancel() }
+        }
+    }
+
+    /// Relay tab — background "is this utterance complete" score 0.0–1.0,
+    /// judged BY the conversation so far (server uses recent turns as
+    /// context, so "Coffee" can score high if the prior turn asked "tea
+    /// or coffee?"). Caller uses the score to adapt the idle-commit
+    /// timeout (high completeness → shorter wait).
+    func completenessScore(text: String, language: String, recentTurns: [CompletenessTurn] = []) async throws -> Double {
+        let resp: CompletenessResponse = try await postJSON(
+            url: Endpoints.relayCompleteness,
+            body: CompletenessRequest(text: text, language: language, recentTurns: recentTurns)
+        )
+        return resp.score
+    }
+
+    /// TTS provider availability check — returns nil if the endpoint isn't
+    /// deployed yet on the backend (404). Callers should treat nil as "no
+    /// info available" and skip the quota banner rather than showing a
+    /// spurious error.
+    func ttsQuota() async throws -> TtsQuotaResponse? {
+        var req = URLRequest(url: Endpoints.ttsQuota)
+        req.httpMethod = "GET"
+        if let jwt = await currentJWT() {
+            req.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else { return nil }
+        if http.statusCode == 404 { return nil }     // endpoint not deployed yet
+        guard (200..<300).contains(http.statusCode) else {
+            throw APIError.httpStatus(http.statusCode, body: String(data: data, encoding: .utf8) ?? "")
+        }
+        return try JSONDecoder().decode(TtsQuotaResponse.self, from: data)
+    }
+
     /// Phrase tab — text-to-speech. Backend picks the engine from `provider`:
     /// "elevenlabs" → MP3 (audio/mpeg), "soniox" → WAV (audio/wav). Either is
     /// fed directly to AVAudioPlayer, no container-specific handling needed.
-    func tts(text: String, language: String, provider: String? = nil) async throws -> Data {
+    /// `model` overrides the default ElevenLabs model (e.g. `eleven_flash_v2_5`
+    /// for ~75ms first byte). `stream` asks the server to chunked-transfer
+    /// the MP3 instead of buffering it — saves ~300-500ms server-side.
+    /// AVAudioPlayer doesn't play partial MP3 streams, so on iOS the win is
+    /// "we get the full file faster" rather than incremental playback.
+    func tts(text: String, language: String, provider: String? = nil, model: String? = nil, stream: Bool = false) async throws -> Data {
         var req = URLRequest(url: Endpoints.tts)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let jwt = await currentJWT() {
             req.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
         }
-        req.httpBody = try encoder.encode(TTSRequest(text: text, language: language, provider: provider))
+        req.httpBody = try encoder.encode(TTSRequest(text: text, language: language, provider: provider, model: model, stream: stream ? true : nil))
         do {
             let (data, response) = try await session.data(for: req)
             guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }

@@ -10,11 +10,13 @@
  * Final tokens are append-only; non-final tokens form the rolling interim window.
  *
  * Events:
- *   'partial' (text)         — current interim text (replaces last)
- *   'final'   (text)         — newly finalized text segment (append to source)
- *   'finished'                — Soniox sent {finished:true}
- *   'error'   ({ message })  — transport / API error
- *   'closed'                  — upstream socket closed
+ *   'partial'  (text)         — current interim text (replaces last)
+ *   'final'    (text)         — newly finalized text segment (append to source)
+ *   'endpoint' ()             — Soniox emitted `<end>` token (utterance boundary). Only fires
+ *                               when SonioxSession is constructed with `endpointDetection:true`.
+ *   'finished'                 — Soniox sent {finished:true}
+ *   'error'    ({ message })  — transport / API error
+ *   'closed'                   — upstream socket closed
  */
 const EventEmitter = require('events');
 const WebSocket = require('ws');
@@ -24,11 +26,13 @@ const MODEL = 'stt-rt-v4';
 const SAMPLE_RATE = 16000;
 
 class SonioxSession extends EventEmitter {
-  constructor({ apiKey, sourceLang = 'es' }) {
+  constructor({ apiKey, sourceLang = 'es', endpointDetection = false, endpointDelayMs = 700 }) {
     super();
     if (!apiKey) throw new Error('SonioxSession: apiKey required');
     this.apiKey = apiKey;
     this.sourceLang = sourceLang;
+    this.endpointDetection = !!endpointDetection;
+    this.endpointDelayMs = Number.isFinite(endpointDelayMs) ? endpointDelayMs : 700;
     this.ws = null;
     this.ready = false;
     this.audioBuffer = [];   // PCM frames received before upstream is open
@@ -51,6 +55,10 @@ class SonioxSession extends EventEmitter {
           language_hints: [this.sourceLang],
           enable_language_identification: false,
         };
+        if (this.endpointDetection) {
+          config.enable_endpoint_detection = true;
+          config.max_endpoint_delay_ms = this.endpointDelayMs;
+        }
         try { ws.send(JSON.stringify(config)); }
         catch (e) { reject(e); return; }
         this.ready = true;
@@ -72,15 +80,17 @@ class SonioxSession extends EventEmitter {
         if (msg.finished) { this.emit('finished'); return; }
 
         if (Array.isArray(msg.tokens)) {
-          let finalChunk = '', interimChunk = '';
+          let finalChunk = '', interimChunk = '', sawEnd = false;
           for (const t of msg.tokens) {
-            if (t.text === '<end>') continue;
+            if (t.text === '<end>') { sawEnd = true; continue; }
             if (t.is_final) finalChunk += t.text;
             else interimChunk += t.text;
           }
           if (finalChunk) this.emit('final', finalChunk);
           // Emit interim every tick (even if empty, to clear stale)
           this.emit('partial', interimChunk);
+          // Endpoint must follow the final it caps, so listeners can flush in order.
+          if (sawEnd) this.emit('endpoint');
         }
       });
 

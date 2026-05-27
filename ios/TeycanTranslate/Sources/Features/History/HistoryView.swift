@@ -286,6 +286,7 @@ private struct ModeBadge: View {
         case "companion": return "Companion"
         case "bridge":    return "Bridge"
         case "chat":      return "Chat"
+        case "relay":     return "Relay"
         default:          return "—"
         }
     }
@@ -296,6 +297,7 @@ private struct ModeBadge: View {
         case "companion": return Color.teal
         case "bridge":    return DS.Color.accent
         case "chat":      return Color.orange
+        case "relay":     return Color.pink
         default:          return DS.Color.textSubtle
         }
     }

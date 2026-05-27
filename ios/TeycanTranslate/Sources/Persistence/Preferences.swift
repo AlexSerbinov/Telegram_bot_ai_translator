@@ -35,6 +35,9 @@ enum Preferences {
         static let bridgeUseSoniox = "bridge.useSoniox"
         static let bridgeTranscriptProvider = "bridge.transcriptProvider"
 
+        // Relay tab
+        static let relayTtsProvider = "relay.ttsProvider"   // "elevenlabs" | "soniox"
+
         // App-wide
         static let lastSelectedTab = "app.lastTab"
     }

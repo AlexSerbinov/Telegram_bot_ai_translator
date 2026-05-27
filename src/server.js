@@ -552,6 +552,83 @@ Translate ONLY the NEW source segment provided by the user, as a natural continu
     }
   });
 
+  // GET /api/tts-quota — TTS provider quota / availability info.
+  // iOS uses this at session start to proactively warn the user before
+  // they hit a dead provider mid-conversation. Result is cached server-side
+  // (60s TTL) to avoid hammering ElevenLabs's billing API on every connect.
+  //
+  // Response shape:
+  //   {
+  //     elevenlabs: { ok: bool, used: int, limit: int, remainingPct: float, message?: string },
+  //     soniox:     { ok: bool, message: string }
+  //   }
+  //
+  // ElevenLabs check: GET https://api.elevenlabs.io/v1/user/subscription
+  //   - ok=false if remaining < 1000 chars OR API returned non-200.
+  //   - remainingPct = (limit - used) / limit, clamped to [0, 1].
+  // Soniox check: no public REST usage endpoint exists. We return ok=true
+  //   by default; iOS will surface a real Soniox quota issue only when a
+  //   live TTS request actually fails with a 4xx.
+  let _quotaCache = { at: 0, payload: null };
+  app.get('/api/tts-quota', async (req, res) => {
+    try {
+      const now = Date.now();
+      if (_quotaCache.payload && (now - _quotaCache.at) < 60_000) {
+        return res.json(_quotaCache.payload);
+      }
+      let elevenlabs = { ok: true, used: 0, limit: 0, remainingPct: 1, message: '' };
+      try {
+        const apiKey = config.elevenLabs.apiKey;
+        if (!apiKey) {
+          elevenlabs = { ok: false, used: 0, limit: 0, remainingPct: 0, message: 'ElevenLabs API key not configured' };
+        } else {
+          const r = await fetch('https://api.elevenlabs.io/v1/user/subscription', {
+            method: 'GET',
+            headers: { 'xi-api-key': apiKey },
+          });
+          if (!r.ok) {
+            elevenlabs = { ok: false, used: 0, limit: 0, remainingPct: 0, message: `ElevenLabs HTTP ${r.status}` };
+          } else {
+            const sub = await r.json();
+            const used = Number(sub.character_count || 0);
+            const limit = Number(sub.character_limit || 0);
+            const remaining = Math.max(0, limit - used);
+            const remainingPct = limit > 0 ? Math.min(1, remaining / limit) : 0;
+            // "ok" if at least 1000 chars left — enough for a few short turns.
+            // Below that we warn the user.
+            const ok = remaining >= 1000 && sub.status === 'active';
+            elevenlabs = {
+              ok,
+              used,
+              limit,
+              remainingPct,
+              message: ok ? '' : (sub.status !== 'active'
+                ? `ElevenLabs subscription ${sub.status}`
+                : `ElevenLabs low on credits: ${remaining}/${limit} chars left`),
+            };
+          }
+        }
+      } catch (e) {
+        elevenlabs = { ok: false, used: 0, limit: 0, remainingPct: 0, message: `ElevenLabs check failed: ${e.message}` };
+      }
+
+      // Soniox doesn't publish a REST usage endpoint. Defer to per-call
+      // error detection on the iOS side. We DO check that the API key
+      // is configured so we can warn early if it's missing.
+      const sonioxOk = Boolean(config.soniox.ttsApiKey || config.soniox.apiKey);
+      const soniox = sonioxOk
+        ? { ok: true, message: '' }
+        : { ok: false, message: 'Soniox TTS not configured on server' };
+
+      const payload = { elevenlabs, soniox };
+      _quotaCache = { at: now, payload };
+      res.json(payload);
+    } catch (e) {
+      logger.error('tts-quota error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Debug logging from Mini App frontend
   app.post('/api/debug', (req, res) => {
     const { tag, data } = req.body;

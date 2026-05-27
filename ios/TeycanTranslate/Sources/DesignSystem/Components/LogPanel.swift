@@ -34,13 +34,26 @@ struct LogPanel: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(logger.entries.suffix(30)) { entry in
-                    Text("\(timestamp(entry.timestamp)) [\(entry.tag)] \(entry.message)")
-                        .font(DS.Font.mono)
-                        .monospacedDigit()
-                        .foregroundStyle(DS.Color.textInk.opacity(0.85))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if isHighlighted(entry) {
+                        // Same compact font as regular rows — just yellow so
+                        // confidence + pause numbers stand out without
+                        // dominating the panel.
+                        Text("\(timestamp(entry.timestamp)) [\(entry.tag)] \(entry.message)")
+                            .font(DS.Font.mono)
+                            .monospacedDigit()
+                            .foregroundStyle(Color.yellow)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Text("\(timestamp(entry.timestamp)) [\(entry.tag)] \(entry.message)")
+                            .font(DS.Font.mono)
+                            .monospacedDigit()
+                            .foregroundStyle(DS.Color.textInk.opacity(0.85))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
                 if logger.entries.isEmpty {
                     Text("(no log entries yet)")
@@ -64,6 +77,15 @@ struct LogPanel: View {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss"
         return f.string(from: d)
+    }
+
+    /// Pick out the "HUD" rows that should be rendered big-yellow-bold so
+    /// the user can read confidence + pause at a glance during a Relay
+    /// session without having to scroll/expand. Add more prefixes here as
+    /// needed.
+    private func isHighlighted(_ entry: DiagLogger.Entry) -> Bool {
+        entry.message.hasPrefix("[relay.complete]")
+            || entry.message.hasPrefix("[relay.idle]")
     }
 
     private func copy() {
